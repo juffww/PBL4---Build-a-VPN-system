@@ -1,0 +1,8 @@
+{
+    "cmake.sourceDirectory": "/home/bao/Documents/PBL4/VPN",
+    "files.associations": {
+        "mutex": "cpp",
+        "chrono": "cpp"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
+}

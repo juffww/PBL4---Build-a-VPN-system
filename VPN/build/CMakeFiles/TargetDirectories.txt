@@ -1,0 +1,7 @@
+/home/bao/Documents/PBL4/VPN/build/CMakeFiles/vpn_server.dir
+/home/bao/Documents/PBL4/VPN/build/CMakeFiles/edit_cache.dir
+/home/bao/Documents/PBL4/VPN/build/CMakeFiles/rebuild_cache.dir
+/home/bao/Documents/PBL4/VPN/build/CMakeFiles/list_install_components.dir
+/home/bao/Documents/PBL4/VPN/build/CMakeFiles/install.dir
+/home/bao/Documents/PBL4/VPN/build/CMakeFiles/install/local.dir
+/home/bao/Documents/PBL4/VPN/build/CMakeFiles/install/strip.dir

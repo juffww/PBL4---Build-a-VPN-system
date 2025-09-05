@@ -1,0 +1,33 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "Build VPN Server",
+            "command": "/usr/bin/g++",
+            "args": [
+                "-fdiagnostics-color=always",
+                "-g",
+                "src/main.cpp",
+                "src/vpn_server.cpp",
+                "src/network/socket_manager.cpp",
+                "-I./src",
+                "-I./src/network",
+                "-o",
+                "vpn_server",
+                "-pthread"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Task for building VPN server project."
+        }
+    ],
+    "version": "2.0.0"
+}
