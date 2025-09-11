@@ -1,4 +1,3 @@
-// src/core/crypto_engine.cpp
 #include "crypto_engine.h"
 #include <openssl/evp.h>
 #include <openssl/rand.h>
@@ -9,7 +8,7 @@ using namespace std;
 
 class CryptoEngine {
 private:
-    static constexpr int AES_KEY_SIZE = 32; // 256-bit
+    static constexpr int AES_KEY_SIZE = 32;
     static constexpr int AES_IV_SIZE = 16;
     
 public:

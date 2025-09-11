@@ -69,24 +69,38 @@ include CMakeFiles/vpn_server.dir/progress.make
 # Include the compile flags for this target's objects.
 include CMakeFiles/vpn_server.dir/flags.make
 
-CMakeFiles/vpn_server.dir/src/main.cpp.o: CMakeFiles/vpn_server.dir/flags.make
-CMakeFiles/vpn_server.dir/src/main.cpp.o: ../src/main.cpp
-CMakeFiles/vpn_server.dir/src/main.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/vpn_server.dir/src/main.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/main.cpp.o -MF CMakeFiles/vpn_server.dir/src/main.cpp.o.d -o CMakeFiles/vpn_server.dir/src/main.cpp.o -c /home/bao/Documents/PBL4/VPN/src/main.cpp
+CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o: CMakeFiles/vpn_server.dir/flags.make
+CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o: ../src/real_vpn_main.cpp
+CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o -MF CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o.d -o CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o -c /home/bao/Documents/PBL4/VPN/src/real_vpn_main.cpp
 
-CMakeFiles/vpn_server.dir/src/main.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/vpn_server.dir/src/main.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bao/Documents/PBL4/VPN/src/main.cpp > CMakeFiles/vpn_server.dir/src/main.cpp.i
+CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bao/Documents/PBL4/VPN/src/real_vpn_main.cpp > CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.i
 
-CMakeFiles/vpn_server.dir/src/main.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/vpn_server.dir/src/main.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bao/Documents/PBL4/VPN/src/main.cpp -o CMakeFiles/vpn_server.dir/src/main.cpp.s
+CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bao/Documents/PBL4/VPN/src/real_vpn_main.cpp -o CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.s
+
+CMakeFiles/vpn_server.dir/src/core/base64.cpp.o: CMakeFiles/vpn_server.dir/flags.make
+CMakeFiles/vpn_server.dir/src/core/base64.cpp.o: ../src/core/base64.cpp
+CMakeFiles/vpn_server.dir/src/core/base64.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/vpn_server.dir/src/core/base64.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/core/base64.cpp.o -MF CMakeFiles/vpn_server.dir/src/core/base64.cpp.o.d -o CMakeFiles/vpn_server.dir/src/core/base64.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/base64.cpp
+
+CMakeFiles/vpn_server.dir/src/core/base64.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/vpn_server.dir/src/core/base64.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bao/Documents/PBL4/VPN/src/core/base64.cpp > CMakeFiles/vpn_server.dir/src/core/base64.cpp.i
+
+CMakeFiles/vpn_server.dir/src/core/base64.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/vpn_server.dir/src/core/base64.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bao/Documents/PBL4/VPN/src/core/base64.cpp -o CMakeFiles/vpn_server.dir/src/core/base64.cpp.s
 
 CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o: CMakeFiles/vpn_server.dir/flags.make
 CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o: ../src/core/crypto_engine.cpp
 CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o -MF CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o.d -o CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/crypto_engine.cpp
 
 CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.i: cmake_force
@@ -100,7 +114,7 @@ CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.s: cmake_force
 CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o: CMakeFiles/vpn_server.dir/flags.make
 CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o: ../src/core/packet_handler.cpp
 CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o -MF CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o.d -o CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/packet_handler.cpp
 
 CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.i: cmake_force
@@ -111,10 +125,24 @@ CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bao/Documents/PBL4/VPN/src/core/packet_handler.cpp -o CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.s
 
+CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o: CMakeFiles/vpn_server.dir/flags.make
+CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o: ../src/core/real_vpn_server.cpp
+CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o -MF CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o.d -o CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/real_vpn_server.cpp
+
+CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bao/Documents/PBL4/VPN/src/core/real_vpn_server.cpp > CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.i
+
+CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bao/Documents/PBL4/VPN/src/core/real_vpn_server.cpp -o CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.s
+
 CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o: CMakeFiles/vpn_server.dir/flags.make
 CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o: ../src/core/tunnel_manager.cpp
 CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o -MF CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o.d -o CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/tunnel_manager.cpp
 
 CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.i: cmake_force
@@ -128,7 +156,7 @@ CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.s: cmake_force
 CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o: CMakeFiles/vpn_server.dir/flags.make
 CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o: ../src/core/vpn_server.cpp
 CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o -MF CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o.d -o CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/vpn_server.cpp
 
 CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.i: cmake_force
@@ -142,7 +170,7 @@ CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.s: cmake_force
 CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o: CMakeFiles/vpn_server.dir/flags.make
 CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o: ../src/network/routing_table.cpp
 CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o -MF CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o.d -o CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o -c /home/bao/Documents/PBL4/VPN/src/network/routing_table.cpp
 
 CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.i: cmake_force
@@ -156,7 +184,7 @@ CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.s: cmake_force
 CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o: CMakeFiles/vpn_server.dir/flags.make
 CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o: ../src/network/socket_manager.cpp
 CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o -MF CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o.d -o CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o -c /home/bao/Documents/PBL4/VPN/src/network/socket_manager.cpp
 
 CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.i: cmake_force
@@ -170,7 +198,7 @@ CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.s: cmake_force
 CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o: CMakeFiles/vpn_server.dir/flags.make
 CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o: ../src/network/tun_interface.cpp
 CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o: CMakeFiles/vpn_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o -MF CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o.d -o CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o -c /home/bao/Documents/PBL4/VPN/src/network/tun_interface.cpp
 
 CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.i: cmake_force
@@ -183,9 +211,11 @@ CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.s: cmake_force
 
 # Object files for target vpn_server
 vpn_server_OBJECTS = \
-"CMakeFiles/vpn_server.dir/src/main.cpp.o" \
+"CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o" \
+"CMakeFiles/vpn_server.dir/src/core/base64.cpp.o" \
 "CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o" \
 "CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o" \
+"CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o" \
 "CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o" \
 "CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o" \
 "CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o" \
@@ -195,9 +225,11 @@ vpn_server_OBJECTS = \
 # External object files for target vpn_server
 vpn_server_EXTERNAL_OBJECTS =
 
-bin/vpn_server: CMakeFiles/vpn_server.dir/src/main.cpp.o
+bin/vpn_server: CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o
+bin/vpn_server: CMakeFiles/vpn_server.dir/src/core/base64.cpp.o
 bin/vpn_server: CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o
 bin/vpn_server: CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o
+bin/vpn_server: CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o
 bin/vpn_server: CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o
 bin/vpn_server: CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o
 bin/vpn_server: CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o
@@ -205,7 +237,7 @@ bin/vpn_server: CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o
 bin/vpn_server: CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o
 bin/vpn_server: CMakeFiles/vpn_server.dir/build.make
 bin/vpn_server: CMakeFiles/vpn_server.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Linking CXX executable bin/vpn_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/bao/Documents/PBL4/VPN/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Linking CXX executable bin/vpn_server"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/vpn_server.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

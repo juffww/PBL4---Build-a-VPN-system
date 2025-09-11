@@ -174,6 +174,30 @@ vpn_server/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/build
 .PHONY : vpn_server/fast
 
+src/core/base64.o: src/core/base64.cpp.o
+.PHONY : src/core/base64.o
+
+# target to build an object file
+src/core/base64.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/base64.cpp.o
+.PHONY : src/core/base64.cpp.o
+
+src/core/base64.i: src/core/base64.cpp.i
+.PHONY : src/core/base64.i
+
+# target to preprocess a source file
+src/core/base64.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/base64.cpp.i
+.PHONY : src/core/base64.cpp.i
+
+src/core/base64.s: src/core/base64.cpp.s
+.PHONY : src/core/base64.s
+
+# target to generate assembly for a file
+src/core/base64.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/base64.cpp.s
+.PHONY : src/core/base64.cpp.s
+
 src/core/crypto_engine.o: src/core/crypto_engine.cpp.o
 .PHONY : src/core/crypto_engine.o
 
@@ -222,6 +246,30 @@ src/core/packet_handler.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.s
 .PHONY : src/core/packet_handler.cpp.s
 
+src/core/real_vpn_server.o: src/core/real_vpn_server.cpp.o
+.PHONY : src/core/real_vpn_server.o
+
+# target to build an object file
+src/core/real_vpn_server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o
+.PHONY : src/core/real_vpn_server.cpp.o
+
+src/core/real_vpn_server.i: src/core/real_vpn_server.cpp.i
+.PHONY : src/core/real_vpn_server.i
+
+# target to preprocess a source file
+src/core/real_vpn_server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.i
+.PHONY : src/core/real_vpn_server.cpp.i
+
+src/core/real_vpn_server.s: src/core/real_vpn_server.cpp.s
+.PHONY : src/core/real_vpn_server.s
+
+# target to generate assembly for a file
+src/core/real_vpn_server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.s
+.PHONY : src/core/real_vpn_server.cpp.s
+
 src/core/tunnel_manager.o: src/core/tunnel_manager.cpp.o
 .PHONY : src/core/tunnel_manager.o
 
@@ -269,30 +317,6 @@ src/core/vpn_server.s: src/core/vpn_server.cpp.s
 src/core/vpn_server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.s
 .PHONY : src/core/vpn_server.cpp.s
-
-src/main.o: src/main.cpp.o
-.PHONY : src/main.o
-
-# target to build an object file
-src/main.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/main.cpp.o
-.PHONY : src/main.cpp.o
-
-src/main.i: src/main.cpp.i
-.PHONY : src/main.i
-
-# target to preprocess a source file
-src/main.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/main.cpp.i
-.PHONY : src/main.cpp.i
-
-src/main.s: src/main.cpp.s
-.PHONY : src/main.s
-
-# target to generate assembly for a file
-src/main.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/main.cpp.s
-.PHONY : src/main.cpp.s
 
 src/network/routing_table.o: src/network/routing_table.cpp.o
 .PHONY : src/network/routing_table.o
@@ -366,6 +390,30 @@ src/network/tun_interface.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.s
 .PHONY : src/network/tun_interface.cpp.s
 
+src/real_vpn_main.o: src/real_vpn_main.cpp.o
+.PHONY : src/real_vpn_main.o
+
+# target to build an object file
+src/real_vpn_main.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o
+.PHONY : src/real_vpn_main.cpp.o
+
+src/real_vpn_main.i: src/real_vpn_main.cpp.i
+.PHONY : src/real_vpn_main.i
+
+# target to preprocess a source file
+src/real_vpn_main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.i
+.PHONY : src/real_vpn_main.cpp.i
+
+src/real_vpn_main.s: src/real_vpn_main.cpp.s
+.PHONY : src/real_vpn_main.s
+
+# target to generate assembly for a file
+src/real_vpn_main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vpn_server.dir/build.make CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.s
+.PHONY : src/real_vpn_main.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -379,21 +427,24 @@ help:
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... vpn_server"
+	@echo "... src/core/base64.o"
+	@echo "... src/core/base64.i"
+	@echo "... src/core/base64.s"
 	@echo "... src/core/crypto_engine.o"
 	@echo "... src/core/crypto_engine.i"
 	@echo "... src/core/crypto_engine.s"
 	@echo "... src/core/packet_handler.o"
 	@echo "... src/core/packet_handler.i"
 	@echo "... src/core/packet_handler.s"
+	@echo "... src/core/real_vpn_server.o"
+	@echo "... src/core/real_vpn_server.i"
+	@echo "... src/core/real_vpn_server.s"
 	@echo "... src/core/tunnel_manager.o"
 	@echo "... src/core/tunnel_manager.i"
 	@echo "... src/core/tunnel_manager.s"
 	@echo "... src/core/vpn_server.o"
 	@echo "... src/core/vpn_server.i"
 	@echo "... src/core/vpn_server.s"
-	@echo "... src/main.o"
-	@echo "... src/main.i"
-	@echo "... src/main.s"
 	@echo "... src/network/routing_table.o"
 	@echo "... src/network/routing_table.i"
 	@echo "... src/network/routing_table.s"
@@ -403,6 +454,9 @@ help:
 	@echo "... src/network/tun_interface.o"
 	@echo "... src/network/tun_interface.i"
 	@echo "... src/network/tun_interface.s"
+	@echo "... src/real_vpn_main.o"
+	@echo "... src/real_vpn_main.i"
+	@echo "... src/real_vpn_main.s"
 .PHONY : help
 
 

@@ -1,54 +1,47 @@
-// tun_interface.h - Linux only implementation
 #ifndef TUN_INTERFACE_H
 #define TUN_INTERFACE_H
 
 #include <string>
-#include <functional>
-#include <linux/if.h>
-#include <linux/if_tun.h>
-#include <sys/ioctl.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include <atomic>
+#include <cstdint>
 
 class TUNInterface {
 private:
     std::string interfaceName;
+    std::atomic<bool> isOpen;
+    int tunFd;
     std::string vpnIP;
     std::string subnetMask;
     std::string serverIP;
-    bool isOpen;
-    int tunFd;
     uint64_t bytesReceived;
     uint64_t bytesSent;
-    
+
 public:
-    TUNInterface(const std::string& name = "vpn0");
+    TUNInterface(const std::string& name = "tun0");
     ~TUNInterface();
     
+    // core operations
     bool create();
-    bool configure(const std::string& ip, const std::string& mask = "255.255.255.0", 
-                   const std::string& server = "");
+    bool configure(const std::string& ip, const std::string& mask, 
+                  const std::string& server = "", bool isServerMode = false);
+    bool setIP(const std::string& ip, const std::string& mask);
     bool setRoutes();
-    void close();
+    std::string getDefaultGateway();
+    std::string getDefaultInterface();
+    bool executeCommand(const std::string& cmd);
     
-    // Đọc/ghi packets
     int readPacket(char* buffer, int maxSize);
     int writePacket(const char* buffer, int size);
-    
-    // Traffic monitoring
+    void close();
+    void resetStats();
+
+    // ---- getters ----
+    std::string getName() const { return interfaceName; }
+    std::string getIP() const { return vpnIP; }          // IP đã gán
+    std::string getMask() const { return subnetMask; }   // Subnet mask
+    bool isOpened() const { return isOpen.load(); }      // Trạng thái open/closed
     uint64_t getBytesReceived() const { return bytesReceived; }
     uint64_t getBytesSent() const { return bytesSent; }
-    void resetStats();
-    
-    // Interface info
-    std::string getInterfaceName() const { return interfaceName; }
-    std::string getVPNIP() const { return vpnIP; }
-    
-private:
-    bool setIP(const std::string& ip, const std::string& mask);
-    bool addRoute(const std::string& network, const std::string& gateway);
-    bool executeCommand(const std::string& cmd);
 };
+
+#endif // TUN_INTERFACE_H

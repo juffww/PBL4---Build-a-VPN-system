@@ -1,0 +1,52 @@
+[
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o -c /home/bao/Documents/PBL4/VPN/src/real_vpn_main.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/real_vpn_main.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/core/base64.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/base64.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/core/base64.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/crypto_engine.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/core/crypto_engine.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/packet_handler.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/core/packet_handler.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/real_vpn_server.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/core/real_vpn_server.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/tunnel_manager.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/core/tunnel_manager.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o -c /home/bao/Documents/PBL4/VPN/src/core/vpn_server.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/core/vpn_server.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/network/routing_table.cpp.o -c /home/bao/Documents/PBL4/VPN/src/network/routing_table.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/network/routing_table.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o -c /home/bao/Documents/PBL4/VPN/src/network/socket_manager.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/network/socket_manager.cpp"
+},
+{
+  "directory": "/home/bao/Documents/PBL4/build",
+  "command": "/usr/bin/clang++-14  -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include -g -Wall -Wextra -O2 -std=gnu++17 -o CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o -c /home/bao/Documents/PBL4/VPN/src/network/tun_interface.cpp",
+  "file": "/home/bao/Documents/PBL4/VPN/src/network/tun_interface.cpp"
+}
+]

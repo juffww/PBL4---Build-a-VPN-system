@@ -1,60 +1,77 @@
-// real_vpn_server.h
-#ifndef REAL_VPN_SERVER_H
-#define REAL_VPN_SERVER_H
+// // real_vpn_server.h - Updated header
+// #ifndef REAL_VPN_SERVER_H
+// #define REAL_VPN_SERVER_H
 
-#include "vpn_server.h"
-#include <map>
-#include <queue>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
+// #include "vpn_server.h"
+// #include <thread>
+// #include <queue>
+// #include <condition_variable>
+// #include <atomic>
 
-// Thêm vào ClientInfo struct
-struct PacketStats {
-    quint64 bytesReceived = 0;
-    quint64 bytesSent = 0;
-    quint64 packetsReceived = 0;
-    quint64 packetsSent = 0;
-    std::chrono::steady_clock::time_point lastActivity;
+// class TUNInterface; // Forward declaration
+
+// struct PacketStats {
+//     uint64_t bytesReceived = 0;
+//     uint64_t bytesSent = 0;
+//     uint32_t packetsReceived = 0;
+//     uint32_t packetsSent = 0;
+//     std::chrono::steady_clock::time_point lastActivity;
+// };
+
+// struct EnhancedClientInfo {
+//     // Base client info
+//     SOCKET socket = INVALID_SOCKET;
+//     std::string address;
+//     bool authenticated = false;
+//     std::string username;
+//     bool ipAssigned = false;
+//     std::string assignedVpnIP;
+//     std::chrono::steady_clock::time_point connectionTime;
     
-    PacketStats() : lastActivity(std::chrono::steady_clock::now()) {}
-};
+//     // Enhanced info for packet handling
+//     PacketStats stats;
+//     std::queue<std::vector<uint8_t>> packetQueue;
+//     std::mutex packetQueueMutex;
+// };
 
-// Enhanced ClientInfo
-struct EnhancedClientInfo : public ClientInfo {
-    PacketStats stats;
-    std::queue<std::vector<uint8_t>> packetQueue;
-    std::mutex packetQueueMutex;
-};
+// class RealVPNServer : public VPNServer {
+// private:
+//     TUNInterface* tun;
+//     std::atomic<bool> packetForwardingRunning;
+//     std::thread packetForwardingThread;
+//     std::thread tunReadThread;
+    
+//     std::mutex packetMutex;
+//     std::condition_variable packetCV;
+//     std::map<int, EnhancedClientInfo> enhancedClients;
 
-class RealVPNServer : public VPNServer {
-private:
-    std::map<int, EnhancedClientInfo> enhancedClients;
-    std::thread packetForwardingThread;
-    bool packetForwardingRunning;
-    std::mutex packetMutex;
-    std::condition_variable packetCV;
+// public:
+//     RealVPNServer(int port = 1194);
+//     virtual ~RealVPNServer();
+    
+//     // Override client handling
+//     void handleClient(int clientId) override;
+//     void removeClient(int clientId) override;
+    
+//     // Packet forwarding
+//     void startPacketForwarding();
+//     void stopPacketForwarding();
+//     void processPacketForwarding();
+//     void readFromTUN();
+//     void forwardPacket(int fromClientId, const std::vector<uint8_t>& packet);
+    
+//     // Utility methods
+//     std::string getDestinationIP(const std::vector<uint8_t>& packet);
+//     int findClientByVpnIP(const std::string& vpnIP);
+    
+//     // Statistics
+//     PacketStats getClientStats(int clientId);
+//     void updateClientStats(int clientId, size_t bytes, bool sent);
+//     std::vector<std::pair<int, PacketStats>> getAllClientStats();
+    
+//     // Base64 encoding/decoding
+//     std::string base64_encode(const std::vector<uint8_t>& data);
+//     std::vector<uint8_t> base64_decode(const std::string& encoded);
+// };
 
-public:
-    RealVPNServer(int port = 1194);
-    virtual ~RealVPNServer();
-    
-    // Override base methods
-    virtual void handleClient(int clientId) override;
-    virtual void removeClient(int clientId) override;
-    
-    // New methods for packet handling
-    void startPacketForwarding();
-    void stopPacketForwarding();
-    void processPacketForwarding();
-    void forwardPacket(int fromClientId, const std::vector<uint8_t>& packet);
-    void routePacketToDestination(const std::vector<uint8_t>& packet, int sourceClientId);
-    std::string getDestinationIP(const std::vector<uint8_t>& packet);
-    int findClientByVpnIP(const std::string& vpnIP);
-    
-    // Statistics
-    PacketStats getClientStats(int clientId);
-    void updateClientStats(int clientId, size_t bytes, bool sent);
-    std::vector<std::pair<int, PacketStats>> getAllClientStats();
-};
-#endif 
+// #endif // REAL_VPN_SERVER_H

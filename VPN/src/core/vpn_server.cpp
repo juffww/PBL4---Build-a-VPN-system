@@ -67,17 +67,35 @@ std::vector<std::string> IPPool::getAllAssignedIPs() {
     return assigned;
 }
 
-// VPNServer Implementation
 VPNServer::VPNServer(int port) 
     : serverPort(port), serverSocket(INVALID_SOCKET), isRunning(false), 
-      shouldStop(false), nextClientId(1) {
+      shouldStop(false), nextClientId(1), tunInterface(nullptr) {
 }
 
 VPNServer::~VPNServer() {
     stop();
+    if (tunInterface) {
+        delete tunInterface;
+        tunInterface = nullptr;
+    }
 }
 
 bool VPNServer::initialize() {
+    // 🔹 Khởi tạo TUN interface trước
+    tunInterface = new TUNInterface("tun0");
+    if (!tunInterface->create()) {
+        std::cout << "[ERROR] Không thể tạo TUN interface\n";
+        return false;
+    }
+    if (!tunInterface->configure("10.8.0.1", "24", "", true)) {
+        std::cout << "[ERROR] Không thể cấu hình TUN interface\n";
+        return false;
+    }
+    std::cout << "[INFO] TUN interface đã sẵn sàng: "
+              << tunInterface->getName() << " ("
+              << tunInterface->getIP() << "/" << tunInterface->getMask() << ")\n";
+
+    // 🔹 Tiếp tục khởi tạo socket server
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == INVALID_SOCKET) {
         std::cout << "[ERROR] Không thể tạo socket\n";
@@ -113,6 +131,7 @@ bool VPNServer::initialize() {
     return true;
 }
 
+
 void VPNServer::start() {
     if (serverSocket == INVALID_SOCKET) {
         std::cout << "[ERROR] Server chưa được khởi tạo\n";
@@ -143,7 +162,6 @@ void VPNServer::stop() {
             if (pair.second.socket != INVALID_SOCKET) {
                 close(pair.second.socket);
             }
-            // Release VPN IP
             if (pair.second.ipAssigned) {
                 ipPool.releaseIP(pair.second.assignedVpnIP);
             }
@@ -157,7 +175,15 @@ void VPNServer::stop() {
         }
     }
     clientThreads.clear();
+
+    // 🔹 cleanup TUN
+    if (tunInterface) {
+        std::cout << "[INFO] Đóng TUN interface\n";
+        delete tunInterface;
+        tunInterface = nullptr;
+    }
 }
+
 
 void VPNServer::acceptConnections() {
     while (!shouldStop && isRunning) {
@@ -387,6 +413,8 @@ std::string VPNServer::getServerIP() const {
             }
         }
     #else
+    // Code này lấy IP LOCAL của server, KHÔNG phải IP công cộng
+    // Là IP LAN của server
         struct ifaddrs* ifaddrs_ptr;
         if (getifaddrs(&ifaddrs_ptr) == 0) {
             for (struct ifaddrs* ifa = ifaddrs_ptr; ifa; ifa = ifa->ifa_next) {
