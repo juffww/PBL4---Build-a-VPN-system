@@ -34,22 +34,16 @@ MainWindow::MainWindow(QWidget *parent)
       networkManager(nullptr), currentReply(nullptr), vpnClient(nullptr),
       systemTrayIcon(nullptr), statsTimer(nullptr), ipCheckTimer(nullptr),
       connectionTimeStarted(false),
-      totalDownload(0), totalUpload(0)
+      totalDownload(0), totalUpload(0), trafficRunning(false), trafficButton(nullptr), webTrafficTimer(nullptr)
 {
-    // Khởi tạo Network Manager
     networkManager = new QNetworkAccessManager(this);
-
-    // Khởi tạo VPN Client
     vpnClient = new VPNClient(this);
-
     setupUI();
     setupSystemTray();
     setupTimer();
     setupVPNClientConnections();
     loadSettings();
     updateConnectionStatus();
-
-    // Lấy IP hiện tại khi khởi động
     updateRealIP();
     getPublicIP();
 }
@@ -68,13 +62,11 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupVPNClientConnections()
 {
-    // Khi socket connected tới server (chỉ log, không gọi lại connectToServer)
     connect(vpnClient, &VPNClient::connected, this, [this]() {
         logTextEdit->append("[INFO] Đã kết nối socket tới server");
         logTextEdit->append("[INFO] Đang thực hiện authentication...");
     });
 
-    // Khi nhận kết quả authentication - đây là signal quan trọng nhất
     connect(vpnClient, &VPNClient::authenticationResult, this, [this](bool success, const QString& message) {
         progressBar->setVisible(false);
         connectButton->setEnabled(true);
@@ -82,11 +74,9 @@ void MainWindow::setupVPNClientConnections()
         if (success) {
             isConnected = true;
 
-            // RESET THỜI GIAN KẾT NỐI về 0
             connectionStartTime = QTime::currentTime();
             connectionTimeStarted = true;
 
-            // Parse VPN IP từ message
             if (message.contains("VPN_IP:")) {
                 int start = message.indexOf("VPN_IP:") + 7;
                 int end = message.indexOf("|", start);
@@ -100,18 +90,15 @@ void MainWindow::setupVPNClientConnections()
             updateConnectionStatus();
             logTextEdit->append(QString("[SUCCESS] Kết nối VPN thành công: %1").arg(message));
 
-            // Hiện thông báo system tray
             if (systemTrayIcon) {
                 systemTrayIcon->showMessage("VPN Client",
                     QString("Kết nối VPN thành công!\nVPN IP: %1").arg(currentVpnIP),
                     QSystemTrayIcon::Information, 3000);
             }
 
-            // Kiểm tra IP công cộng sau khi kết nối
             QTimer::singleShot(2000, this, &MainWindow::getPublicIP);
 
         } else {
-            // Authentication thất bại
             isConnected = false;
             currentVpnIP.clear();
             connectionTimeStarted = false;
@@ -122,11 +109,10 @@ void MainWindow::setupVPNClientConnections()
         }
     });
 
-    // Khi ngắt kết nối
     connect(vpnClient, &VPNClient::disconnected, this, [this]() {
         isConnected = false;
         currentVpnIP.clear();
-        connectionTimeStarted = false; // Reset timer khi disconnect
+        connectionTimeStarted = false;
 
         updateConnectionStatus();
         progressBar->setVisible(false);
@@ -134,16 +120,13 @@ void MainWindow::setupVPNClientConnections()
 
         logTextEdit->append("[INFO] Đã ngắt kết nối khỏi server");
 
-        // Cập nhật lại IP thật và public IP
         updateRealIP();
         getPublicIP();
     });
 
-    // Khi có lỗi kết nối
     connect(vpnClient, &VPNClient::error, this, [this](const QString& errorMsg) {
         logTextEdit->append(QString("[ERROR] %1").arg(errorMsg));
 
-        // Reset trạng thái
         progressBar->setVisible(false);
         connectButton->setEnabled(true);
         isConnected = false;
@@ -154,11 +137,8 @@ void MainWindow::setupVPNClientConnections()
         QMessageBox::warning(this, "Lỗi kết nối", errorMsg);
     });
 
-    // Khi nhận message từ server
     connect(vpnClient, &VPNClient::messageReceived, this, [this](const QString& message) {
         logTextEdit->append(QString("[SERVER] %1").arg(message));
-
-        // Parse thông tin IP từ server responses khác
         if (message.startsWith("VPN_IP|")) {
             QStringList parts = message.split("|");
             if (parts.size() >= 2) {
@@ -168,19 +148,16 @@ void MainWindow::setupVPNClientConnections()
             }
         }
         else if (message.startsWith("STATUS|")) {
-            // Parse status info nếu cần
             logTextEdit->append(QString("[INFO] Status: %1").arg(message.mid(7)));
         }
     });
 
-    // Signal khi được cấp VPN IP
     connect(vpnClient, &VPNClient::vpnIPAssigned, this, [this](const QString& vpnIP) {
         currentVpnIP = vpnIP;
         updateConnectionStatus();
         logTextEdit->append(QString("[INFO] VPN IP assigned: %1").arg(vpnIP));
     });
 
-    // Signal khi nhận status từ server
     connect(vpnClient, &VPNClient::statusReceived, this, [this](const QString& status) {
         logTextEdit->append(QString("[STATUS] %1").arg(status));
     });
@@ -195,43 +172,118 @@ void MainWindow::connectToVPN()
 
     QString username = usernameEdit->text().trimmed();
     QString password = passwordEdit->text().trimmed();
+    QString serverInput = serverEdit->text().trimmed();
 
     if (username.isEmpty()) {
         QMessageBox::warning(this, "Lỗi", "Vui lòng nhập tên đăng nhập");
+        usernameEdit->setFocus();
         return;
     }
 
     if (password.isEmpty()) {
         QMessageBox::warning(this, "Lỗi", "Vui lòng nhập mật khẩu");
+        passwordEdit->setFocus();
         return;
     }
 
-    // Disable button và hiện progress bar
+    QString host;
+    int port;
+
+    if (!parseServerAddress(serverInput, host, port)) {
+        QMessageBox::warning(this, "Lỗi",
+            "Địa chỉ server không hợp lệ!\n"
+            "Định dạng: IP:Port (ví dụ: 192.168.1.100:1194)\n"
+            "Hoặc chỉ IP (sẽ dùng port 1194)");
+        serverEdit->setFocus();
+        serverEdit->selectAll();
+        return;
+    }
+
     connectButton->setEnabled(false);
     progressBar->setVisible(true);
     progressBar->setRange(0, 0);
 
     logTextEdit->append("[INFO] Bắt đầu kết nối VPN...");
-    logTextEdit->append(QString("[INFO] Connecting to server: %1:1194").arg("192.168.1.100"));
+    logTextEdit->append(QString("[INFO] Connecting to server: %1:%2").arg(host).arg(port));
 
-    // CHỈ gọi connectToServer MỘT LẦN duy nhất ở đây
-    vpnClient->connectToServer("192.168.1.100", 1194, username, password);
+    if (!isServerReachable(host)) {
+        logTextEdit->append(QString("[WARN] Không thể ping tới server %1, vẫn thử kết nối...").arg(host));
+    }
+
+    vpnClient->connectToServer(host, port, username, password);
+    connect(vpnClient, &VPNClient::connected, this, [this]() {
+        isConnected = true;
+
+        vpnClient->startTUNTrafficGeneration();
+        trafficButton->setText("Traffic (Running)");
+        trafficButton->setEnabled(true);
+        trafficRunning = true;
+
+        logTextEdit->append("[INFO] VPN connected. Traffic generation started.");
+        connectButton->setText("Ngắt kết nối");
+        connectButton->setEnabled(true);
+        progressBar->setVisible(false);
+    });
+
+    connect(vpnClient, &VPNClient::disconnected, this, [this]() {
+        isConnected = false;
+
+        vpnClient->stopTUNTrafficGeneration();
+        trafficButton->setText("Traffic (Disconnected)");
+        trafficButton->setEnabled(false);
+        trafficRunning = false;
+
+        logTextEdit->append("[INFO] VPN disconnected. Traffic stopped.");
+        connectButton->setText("Kết nối");
+        connectButton->setEnabled(true);
+        progressBar->setVisible(false);
+    });
 }
 
+
+bool MainWindow::isServerReachable(const QString& host)
+{
+    if (host == "localhost" || host == "127.0.0.1") {
+        return true;
+    }
+
+    QHostAddress address(host);
+    if (address.isNull()) {
+        return false; // Không phải IP hợp lệ
+    }
+
+    quint32 ip = address.toIPv4Address();
+
+    if ((ip >= 0x0A000000 && ip <= 0x0AFFFFFF) ||      // 10.x.x.x
+        (ip >= 0xAC100000 && ip <= 0xAC1FFFFF) ||      // 172.16.x.x - 172.31.x.x
+        (ip >= 0xC0A80000 && ip <= 0xC0A8FFFF)) {      // 192.168.x.x
+        return true;
+    }
+
+    return true;
+}
 void MainWindow::disconnectFromVPN()
 {
     if (vpnClient) {
         vpnClient->disconnectFromServer();
+        vpnClient->stopTUNTrafficGeneration();
     }
 
     isConnected = false;
     currentVpnIP.clear();
+
+    trafficButton->setText("Traffic (Disconnected)");
+    trafficButton->setEnabled(false);
+    trafficRunning = false;
+
     updateConnectionStatus();
     progressBar->setVisible(false);
+    connectButton->setText("Kết nối");
     connectButton->setEnabled(true);
-    logTextEdit->append("Đã ngắt kết nối VPN!");
 
-    // Cập nhật lại IP sau khi ngắt kết nối
+    logTextEdit->append("[INFO] Đã ngắt kết nối VPN!");
+    logTextEdit->append("[INFO] Traffic generation stopped.");
+
     updateRealIP();
     getPublicIP();
 }
@@ -247,7 +299,7 @@ void MainWindow::showAbout()
         "VPN Client v1.0\n\n"
         "Ứng dụng VPN Client đơn giản được xây dựng với Qt.\n"
         "Kết nối tới máy chủ VPN với cấp phát IP động.\n\n"
-        "© 2024 VPN Client");
+        "© 2025 VPN Client");
 }
 
 void MainWindow::toggleWindow()
@@ -266,19 +318,15 @@ void MainWindow::updateStats()
     if (isConnected) {
         static quint64 totalDownload = 0;
         static quint64 totalUpload = 0;
-
-        // Tăng dữ liệu fake
                 totalDownload += (rand() % 1000 + 100);
                 totalUpload += (rand() % 500 + 50);
 
                 downloadLabel->setText(QString("↓ %1 KB").arg(totalDownload));
                 uploadLabel->setText(QString("↑ %1 KB").arg(totalUpload));
 
-        // Sử dụng QTime để tính thời gian kết nối chính xác
         if (connectionTimeStarted) {
             int totalSeconds = connectionStartTime.secsTo(QTime::currentTime());
             if (totalSeconds < 0) {
-                // Xử lý trường hợp qua nửa đêm
                 totalSeconds += 24 * 3600;
             }
 
@@ -292,8 +340,8 @@ void MainWindow::updateStats()
                 .arg(seconds, 2, 10, QChar('0')));
         }
     } else {
-        totalDownload = 0;  // Reset về 0
-        totalUpload = 0;    // Reset về 0
+        totalDownload = 0;
+        totalUpload = 0;
 
         downloadLabel->setText("↓ 0 KB");
         uploadLabel->setText("↑ 0 KB");
@@ -365,7 +413,6 @@ void MainWindow::onPublicIPReceived()
         logTextEdit->append("[WARN] Không thể lấy IP công cộng");
     }
 
-    // Dọn dẹp an toàn
     disconnect(currentReply, nullptr, this, nullptr);
     currentReply->deleteLater();
     currentReply = nullptr;
@@ -425,7 +472,6 @@ void MainWindow::setupUI()
 
     mainLayout->addWidget(statusGroup);
 
-    // Connection settings group
     QGroupBox *settingsGroup = new QGroupBox("Cài đặt kết nối");
     QGridLayout *settingsLayout = new QGridLayout(settingsGroup);
 
@@ -465,6 +511,15 @@ void MainWindow::setupUI()
     connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectToVPN);
     buttonLayout->addWidget(connectButton);
 
+    // Nút Traffic chỉ hiển thị trạng thái
+    trafficButton = new QPushButton("Traffic (Disconnected)");
+    trafficButton->setEnabled(false);
+    trafficButton->setStyleSheet(
+        "QPushButton { font-weight: bold; padding: 10px 20px; font-size: 14px; }"
+        "QPushButton:disabled { background-color: #cccccc; }"
+    );
+    buttonLayout->addWidget(trafficButton);
+
     QPushButton *clearLogButton = new QPushButton("Xóa log");
     connect(clearLogButton, &QPushButton::clicked, this, &MainWindow::clearLog);
     buttonLayout->addWidget(clearLogButton);
@@ -472,25 +527,23 @@ void MainWindow::setupUI()
     buttonLayout->addStretch();
     mainLayout->addLayout(buttonLayout);
 
-    // Progress bar
+
     progressBar = new QProgressBar();
     progressBar->setVisible(false);
     mainLayout->addWidget(progressBar);
 
-    // Log area
     QGroupBox *logGroup = new QGroupBox("Nhật ký kết nối");
-    QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
+        QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
 
-    logTextEdit = new QTextEdit();
-    logTextEdit->setMaximumHeight(120);
-    logTextEdit->setReadOnly(true);
-    logTextEdit->append("VPN Client Enhanced đã khởi động...");
-    logTextEdit->append("Server: 192.168.1.100:1194 với cấp phát IP động");
-    logLayout->addWidget(logTextEdit);
+        logTextEdit = new QTextEdit();
+        logTextEdit->setMaximumHeight(120);
+        logTextEdit->setReadOnly(true);
+        logTextEdit->append("VPN Client Enhanced đã khởi động...");
+        logTextEdit->append("Server mặc định: 192.168.1.100:1194 với cấp phát IP động");
+        logLayout->addWidget(logTextEdit);
 
-    mainLayout->addWidget(logGroup);
+        mainLayout->addWidget(logGroup);
 
-    // Menu bar
     QMenuBar *menuBar = this->menuBar();
     QMenu *fileMenu = menuBar->addMenu("Tệp");
     QAction *exitAction = fileMenu->addAction("Thoát");
@@ -501,6 +554,34 @@ void MainWindow::setupUI()
     connect(aboutAction, &QAction::triggered, this, &MainWindow::showAbout);
 
     statusBar()->showMessage("Sẵn sàng kết nối tới VPN server với IP động");
+}
+
+bool MainWindow::parseServerAddress(const QString& serverInput, QString& host, int& port)
+{
+    if (serverInput.isEmpty()) {
+        return false;
+    }
+
+    QStringList parts = serverInput.split(":");
+    host = parts[0].trimmed();
+
+    if (host.isEmpty()) {
+        return false;
+    }
+
+    port = 1194;
+
+    if (parts.size() > 1) {
+        bool ok;
+        int parsedPort = parts[1].toInt(&ok);
+        if (ok && parsedPort > 0 && parsedPort <= 65535) {
+            port = parsedPort;
+        } else {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void MainWindow::setupSystemTray()
@@ -544,7 +625,6 @@ void MainWindow::setupTimer()
     connect(statsTimer, &QTimer::timeout, this, &MainWindow::updateStats);
     statsTimer->start(1000);
 
-    // Timer để cập nhật IP định kỳ
     ipCheckTimer = new QTimer(this);
     connect(ipCheckTimer, &QTimer::timeout, this, &MainWindow::checkCurrentIP);
     ipCheckTimer->start(60000); // Cập nhật mỗi phút

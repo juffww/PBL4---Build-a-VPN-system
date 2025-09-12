@@ -17,7 +17,6 @@
 #include <QNetworkReply>
 
 class VPNClient;
-
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -36,7 +35,7 @@ private slots:
     void updateRealIP();
     void checkCurrentIP();
     void onPublicIPReceived();
-
+    bool parseServerAddress(const QString& serverInput, QString& host, int& port);
 private:
     void setupUI();
     void setupSystemTray();
@@ -47,9 +46,9 @@ private:
     void saveSettings();
     void closeEvent(QCloseEvent *event) override;
     void getPublicIP();
+    bool isServerReachable(const QString& host);
     QString getCurrentLocalIP();
 
-    // UI Components
     QLabel *statusLabel;
     QLabel *realIPLabel;
     QLabel *vpnIPLabel;
@@ -71,16 +70,13 @@ private:
     QTimer *statsTimer;
     QTimer *ipCheckTimer;
 
-    // Network
     QNetworkAccessManager *networkManager;
     QNetworkReply *currentReply;
 
-    // VPN
     VPNClient *vpnClient;
     bool isConnected;
     bool isHideMessageShown;
 
-    // Connection time tracking - THÊM MỚI
     QTime connectionStartTime;
     bool connectionTimeStarted;
 
@@ -90,6 +86,10 @@ private:
     QString currentRealIP;
     QString currentVpnIP;
     QString currentPublicIP;
+
+    QPushButton* trafficButton;
+    QTimer* webTrafficTimer;
+    bool trafficRunning;
 };
 
-#endif // MAINWINDOW_H
+#endif
