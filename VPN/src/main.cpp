@@ -8,48 +8,36 @@
 #include <cstring>
 #include <signal.h>
 #include <sstream> 
-
 #ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib")
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
 #else
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 #endif
-
 #include "core/vpn_server.h"
 #include "network/socket_manager.h"
 
-//Giao diện điều khiển server
 class VPNServerManager {
 private:
     VPNServer* server;
     bool running;
     std::thread serverThread;
-
 public:
     VPNServerManager() : server(nullptr), running(false) {}
-    
-    ~VPNServerManager() {
-        stop();
-    }
-
+    ~VPNServerManager() { stop(); }
     void start(int port = 1194) {
         if (running) {
             std::cout << "[WARN] Server đã đang chạy!\n";
             return;
         }
-
         server = new VPNServer(port);
         if (server->initialize()) {
             running = true;
-            serverThread = std::thread([this]() {
-                server->start();
-            });
-            
+            serverThread = std::thread([this]() { server->start(); });
             std::cout << "[INFO] VPN Server đã khởi động trên cổng " << port << "\n";
             std::cout << "[INFO] Server IP: " << server->getServerIP() << "\n";
             printStatus();
@@ -59,23 +47,18 @@ public:
             server = nullptr;
         }
     }
-
     void stop() {
         if (running && server) {
             running = false;
             server->stop();
-            if (serverThread.joinable()) {
-                serverThread.join();
-            }
+            if (serverThread.joinable()) serverThread.join();
             delete server;
             server = nullptr;
             std::cout << "[INFO] Server đã dừng\n";
         }
     }
-
     void printStatus() {
         if (!server) return;
-        
         std::cout << "\n=== VPN SERVER STATUS ===\n";
         std::cout << "Trạng thái: " << (running ? "RUNNING" : "STOPPED") << "\n";
         std::cout << "Cổng: " << server->getPort() << "\n";
@@ -83,7 +66,6 @@ public:
         std::cout << "Thời gian hoạt động: " << server->getUptime() << "s\n";
         std::cout << "========================\n\n";
     }
-
     void printHelp() {
         std::cout << "\n=== VPN SERVER COMMANDS ===\n";
         std::cout << "start [port]  - Khởi động server (mặc định port 1194)\n";
@@ -97,66 +79,53 @@ public:
         std::cout << "quit/exit     - Thoát chương trình\n";
         std::cout << "============================\n\n";
     }
-
-
     void listClients() {
         if (!server) {
             std::cout << "[WARN] Server chưa khởi động\n";
             return;
         }
-
         auto clients = server->getConnectedClients();
         if (clients.empty()) {
             std::cout << "Không có client nào đang kết nối\n";
             return;
         }
-
         std::cout << "\n=== CONNECTED CLIENTS ===\n";
         std::cout << std::left << std::setw(5) << "ID" 
-                << std::setw(18) << "Real IP" 
-                << std::setw(18) << "VPN IP"
-                << std::setw(16) << "Connect Time"
-                << std::setw(15) << "Username"
-                << std::setw(10) << "Status\n";
+                  << std::setw(18) << "Real IP" 
+                  << std::setw(18) << "VPN IP"
+                  << std::setw(16) << "Connect Time"
+                  << std::setw(15) << "Username"
+                  << std::setw(10) << "Status\n";
         std::cout << std::string(85, '-') << "\n";
-
         for (const auto& client : clients) {
             std::string vpnIP = client.ipAssigned ? client.assignedVpnIP : "Not assigned";
             std::string username = client.authenticated ? client.username : "Not auth";
-            
             std::cout << std::left << std::setw(5) << client.id
-                    << std::setw(18) << client.realIP
-                    << std::setw(18) << vpnIP
-                    << std::setw(16) << client.connectTime
-                    << std::setw(15) << username
-                    << std::setw(10) << (client.authenticated ? "Active" : "Pending")<< "\n";
+                      << std::setw(18) << client.realIP
+                      << std::setw(18) << vpnIP
+                      << std::setw(16) << client.connectTime
+                      << std::setw(15) << username
+                      << std::setw(10) << (client.authenticated ? "Active" : "Pending")<< "\n";
         }
         std::cout << "===========================\n\n";
     }
-
     VPNServer* getServer() { return server; }
     bool isRunning() const { return running; }
 };
 
 bool g_running = true;
 VPNServerManager* g_serverManager = nullptr;
-
 void signalHandler(int signal) {
     std::cout << "\n[INFO] Nhận tín hiệu dừng. Đang thoát...\n";
     g_running = false;
-    if (g_serverManager) {
-        g_serverManager->stop();
-    }
+    if (g_serverManager) g_serverManager->stop();
 }
 
 int main() {
-    // Thiết lập xử lý tín hiệu
     signal(SIGINT, signalHandler);
     #ifndef _WIN32
     signal(SIGTERM, signalHandler);
     #endif
-
-    // Khởi tạo Winsock trên Windows
     #ifdef _WIN32
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -164,32 +133,22 @@ int main() {
         return 1;
     }
     #endif
-
     std::cout << "=================================\n";
     std::cout << "   VPN SERVER CONTROL PANEL     \n";
     std::cout << "=================================\n";
     std::cout << "Phiên bản: 3.0.0\n";
     std::cout << "Giao thức: OpenVPN Compatible\n\n";
-
     VPNServerManager serverManager;
     g_serverManager = &serverManager;
-    
     serverManager.printHelp();
-
     std::string command;
     while (g_running) {
         std::cout << "vpn-server> ";
-        if (!std::getline(std::cin, command)) {
-            break;
-        }
-
+        if (!std::getline(std::cin, command)) break;
         if (command.empty()) continue;
-
-        // Parse command
         std::istringstream iss(command);
         std::string cmd;
         iss >> cmd;
-
         if (cmd == "start") {
             int port = 1194;
             iss >> port;
@@ -230,16 +189,10 @@ int main() {
             if (serverManager.getServer()) {
                 auto stats = serverManager.getServer()->getVPNStats();
                 std::cout << "\n=== VPN STATISTICS ===\n";
-                for (const auto& stat : stats) {
-                    std::cout << stat << "\n";
-                }
-                
-                // Hiển thị danh sách IP đã cấp phát
+                for (const auto& stat : stats) std::cout << stat << "\n";
                 auto assignedIPs = serverManager.getServer()->getAllAssignedVPNIPs();
                 std::cout << "Assigned VPN IPs:\n";
-                for (const auto& ip : assignedIPs) {
-                    std::cout << "  - " << ip << "\n";
-                }
+                for (const auto& ip : assignedIPs) std::cout << "  - " << ip << "\n";
                 std::cout << "=====================\n\n";
             } else {
                 std::cout << "[WARN] Server chưa khởi động\n";
@@ -267,13 +220,10 @@ int main() {
             std::cout << "[ERROR] Lệnh không hợp lệ. Gõ 'help' để xem danh sách lệnh.\n";
         }
     }
-
     serverManager.stop();
-    
     #ifdef _WIN32
     WSACleanup();
     #endif
-
     std::cout << "[INFO] Chương trình đã thoát.\n";
     return 0;
 }

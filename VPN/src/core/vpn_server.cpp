@@ -4,7 +4,6 @@
 #include <cstring>
 #include <iomanip>
 #include <algorithm>
-
 #ifdef _WIN32
     #include <ws2tcpip.h>
     #define close closesocket
@@ -14,10 +13,8 @@
     #include <ifaddrs.h>
 #endif
 
-// IPPool Implementation
 IPPool::IPPool(const std::string& network, int startRange, int endRange) 
     : baseNetwork(network) {
-    // Tạo pool các IP từ 10.8.0.2 đến 10.8.0.254
     for (int i = startRange; i <= endRange; i++) {
         std::string ip = baseNetwork + "." + std::to_string(i);
         availableIPs.push(ip);
@@ -27,7 +24,6 @@ IPPool::IPPool(const std::string& network, int startRange, int endRange)
 
 std::string IPPool::assignIP() {
     std::lock_guard<std::mutex> lock(poolMutex);
-    
     if (availableIPs.empty()) {
         return ""; 
     }
@@ -41,7 +37,6 @@ std::string IPPool::assignIP() {
 
 void IPPool::releaseIP(const std::string& ip) {
     std::lock_guard<std::mutex> lock(poolMutex);
-    
     auto it = ipUsage.find(ip);
     if (it != ipUsage.end() && it->second) {
         it->second = false;
@@ -54,10 +49,9 @@ int IPPool::getAvailableCount() {
     return availableIPs.size();
 }
 
-std::vector<std::string> IPPool::getAllAssignedIPs() {
+std::vector<std::string> IPPool::getAllAssignedIPs() const{
     std::lock_guard<std::mutex> lock(poolMutex);
     std::vector<std::string> assigned;
-    
     for (const auto& pair : ipUsage) {
         if (pair.second) {
             assigned.push_back(pair.first);
@@ -69,7 +63,7 @@ std::vector<std::string> IPPool::getAllAssignedIPs() {
 
 VPNServer::VPNServer(int port) 
     : serverPort(port), serverSocket(INVALID_SOCKET), isRunning(false), 
-      shouldStop(false), nextClientId(1), tunInterface(nullptr) {
+      shouldStop(false), nextClientId(1), tunInterface(nullptr), tunThreadRunning(false) {
 }
 
 VPNServer::~VPNServer() {
@@ -81,81 +75,139 @@ VPNServer::~VPNServer() {
 }
 
 bool VPNServer::initialize() {
-    // 🔹 Khởi tạo TUN interface trước
     tunInterface = new TUNInterface("tun0");
     if (!tunInterface->create()) {
-        std::cout << "[ERROR] Không thể tạo TUN interface\n";
+        std::cout << "[ERROR] KhÃ´ng thá»ƒ táº¡o TUN interface\n";
         return false;
     }
     if (!tunInterface->configure("10.8.0.1", "24", "", true)) {
-        std::cout << "[ERROR] Không thể cấu hình TUN interface\n";
+        std::cout << "[ERROR] KhÃ´ng thá»ƒ cáº¥u hÃ¬nh TUN interface\n";
         return false;
     }
-    std::cout << "[INFO] TUN interface đã sẵn sàng: "
+    std::cout << "[INFO] TUN interface Ä‘Ã£ sáºµn sÃ ng: "
               << tunInterface->getName() << " ("
               << tunInterface->getIP() << "/" << tunInterface->getMask() << ")\n";
 
-    // 🔹 Tiếp tục khởi tạo socket server
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == INVALID_SOCKET) {
-        std::cout << "[ERROR] Không thể tạo socket\n";
+        std::cout << "[ERROR] KhÃ´ng thá»ƒ táº¡o socket\n";
         return false;
     }
-
     int opt = 1;
     if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 
                    (char*)&opt, sizeof(opt)) < 0) {
-        std::cout << "[WARN] Không thể set SO_REUSEADDR\n";
+        std::cout << "[WARN] KhÃ´ng thá»ƒ set SO_REUSEADDR\n";
     }
-
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = INADDR_ANY;
     serverAddr.sin_port = htons(serverPort);
-
     if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        std::cout << "[ERROR] Không thể bind socket trên cổng " << serverPort << "\n";
+        std::cout << "[ERROR] KhÃ´ng thá»ƒ bind socket trÃªn cá»•ng " << serverPort << "\n";
         close(serverSocket);
         serverSocket = INVALID_SOCKET;
         return false;
     }
-
     if (listen(serverSocket, 10) == SOCKET_ERROR) {
-        std::cout << "[ERROR] Không thể listen trên socket\n";
+        std::cout << "[ERROR] KhÃ´ng thá»ƒ listen trÃªn socket\n";
         close(serverSocket);
         serverSocket = INVALID_SOCKET;
         return false;
     }
-
     return true;
 }
 
-
 void VPNServer::start() {
     if (serverSocket == INVALID_SOCKET) {
-        std::cout << "[ERROR] Server chưa được khởi tạo\n";
+        std::cout << "[ERROR] Server chÆ°a Ä‘Æ°á»£c khá»Ÿi táº¡o\n";
         return;
     }
-
     isRunning = true;
     shouldStop = false;
     startTime = std::chrono::steady_clock::now();
-    
-    std::cout << "[INFO] VPN Server đang lắng nghe kết nối...\n";
+    startTUNProcessing();
+    std::cout << "[INFO] VPN Server Ä‘ang láº¯ng nghe káº¿t ná»‘i...\n";
     std::cout << "[INFO] IP Pool: " << ipPool.getAvailableCount() << " IPs available\n";
     acceptConnections();
+}
+
+void VPNServer::startTUNProcessing() {
+    tunThreadRunning = true;
+    tunThread = std::thread([this]() {
+        char buffer[2048];
+        std::cout << "[INFO] TUN processing thread started\n";
+        while (tunThreadRunning && tunInterface && tunInterface->isOpened()) {
+            int bytesRead = tunInterface->readPacket(buffer, sizeof(buffer));
+            if (bytesRead > 0) {
+                std::cout << "[DEBUG] TUN read " << bytesRead << " bytes\n";
+                if (bytesRead >= 20) { 
+                    struct iphdr {
+                        uint8_t version_ihl;
+                        uint8_t tos;
+                        uint16_t tot_len;
+                        uint16_t id;
+                        uint16_t frag_off;
+                        uint8_t ttl;
+                        uint8_t protocol;
+                        uint16_t check;
+                        uint32_t saddr;
+                        uint32_t daddr;
+                    };
+                    iphdr* ip_header = (iphdr*)buffer;
+                    char src_ip[16], dst_ip[16];
+                    inet_ntop(AF_INET, &ip_header->saddr, src_ip, 16);
+                    inet_ntop(AF_INET, &ip_header->daddr, dst_ip, 16);
+                    std::cout << "[TUN] Packet: " << src_ip << " -> " << dst_ip 
+                              << " (" << bytesRead << " bytes)\n";
+                    forwardPacketToClient(buffer, bytesRead, std::string(dst_ip));
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        std::cout << "[INFO] TUN processing thread stopped\n";
+    });
+}
+
+void VPNServer::forwardPacketToClient(const char* packet, int size, const std::string& destIP) {
+    std::lock_guard<std::mutex> lock(clientsMutex);
+    for (auto& pair : clients) {
+        if (pair.second.authenticated && pair.second.ipAssigned && 
+            pair.second.assignedVpnIP == destIP) {
+            std::string packetData = "PACKET|";
+            packetData.append(packet, size);
+            packetData += "\n";
+            if (send(pair.second.socket, packetData.c_str(), packetData.length(), MSG_NOSIGNAL) > 0) {
+                std::cout << "[FORWARD] Packet sent to client " << pair.first 
+                          << " (VPN IP: " << destIP << ")\n";
+            }
+            return;
+        }
+    }
+    std::cout << "[INFO] Packet to " << destIP << " - forwarding to internet\n";
+}
+
+void VPNServer::injectPacketFromClient(int clientId, const char* packet, int size) {
+    if (tunInterface && tunInterface->isOpened()) {
+        int written = tunInterface->writePacket(packet, size);
+        if (written > 0) {
+            std::cout << "[INJECT] " << written << " bytes injected to TUN from client " 
+                      << clientId << "\n";
+        }
+    }
 }
 
 void VPNServer::stop() {
     shouldStop = true;
     isRunning = false;
-
+    tunThreadRunning = false;
+    if (tunThread.joinable()) {
+        tunThread.join();
+    }
     if (serverSocket != INVALID_SOCKET) {
         close(serverSocket);
         serverSocket = INVALID_SOCKET;
     }
-
     {
         std::lock_guard<std::mutex> lock(clientsMutex);
         for (auto& pair : clients) {
@@ -168,37 +220,30 @@ void VPNServer::stop() {
         }
         clients.clear();
     }
-
     for (auto& thread : clientThreads) {
         if (thread.joinable()) {
             thread.join();
         }
     }
     clientThreads.clear();
-
-    // 🔹 cleanup TUN
     if (tunInterface) {
-        std::cout << "[INFO] Đóng TUN interface\n";
+        std::cout << "[INFO] ÄÃ³ng TUN interface\n";
         delete tunInterface;
         tunInterface = nullptr;
     }
 }
 
-
 void VPNServer::acceptConnections() {
     while (!shouldStop && isRunning) {
         struct sockaddr_in clientAddr;
         socklen_t clientLen = sizeof(clientAddr);
-        
         SOCKET clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientLen);
-        
         if (clientSocket == INVALID_SOCKET) {
             if (!shouldStop) {
-                std::cout << "[ERROR] Lỗi khi accept connection\n";
+                std::cout << "[ERROR] Lá»—i khi accept connection\n";
             }
             continue;
         }
-
         ClientInfo clientInfo;
         clientInfo.id = nextClientId++;
         clientInfo.socket = clientSocket;
@@ -207,15 +252,13 @@ void VPNServer::acceptConnections() {
         clientInfo.connectTime = getCurrentTime();
         clientInfo.connectedAt = std::chrono::steady_clock::now();
         clientInfo.authenticated = false;
-        clientInfo.realIP = clientInfo.ip; // Lưu IP thật
+        clientInfo.realIP = clientInfo.ip;
         clientInfo.ipAssigned = false;
-
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
             clients[clientInfo.id] = clientInfo;
         }
-
-        std::cout << "[INFO] Client mới kết nối - ID: " << clientInfo.id 
+        std::cout << "[INFO] Client má»›i káº¿t ná»‘i - ID: " << clientInfo.id 
                   << ", Real IP: " << clientInfo.ip << ":" << clientInfo.port << "\n";
 
         clientThreads.emplace_back([this, clientInfo]() {
@@ -226,7 +269,6 @@ void VPNServer::acceptConnections() {
 
 void VPNServer::handleClient(int clientId) {
     ClientInfo* client = nullptr;
-    
     {
         std::lock_guard<std::mutex> lock(clientsMutex);
         auto it = clients.find(clientId);
@@ -234,37 +276,26 @@ void VPNServer::handleClient(int clientId) {
             client = &it->second;
         }
     }
-
     if (!client) return;
-
-    char buffer[1024];
-    
+    char buffer[2048];
     std::string welcomeMsg = "WELCOME|VPN Server 1.0.0|Ready for authentication\n";
     send(client->socket, welcomeMsg.c_str(), welcomeMsg.length(), 0);
-
     while (!shouldStop && client->socket != INVALID_SOCKET) {
         int bytesReceived = recv(client->socket, buffer, sizeof(buffer) - 1, 0);
-        
         if (bytesReceived <= 0) {
             break;
         }
-
         buffer[bytesReceived] = '\0';
         std::string message(buffer);
-        
         std::istringstream iss(message);
         std::string command;
         iss >> command;
-
         if (command == "AUTH") {
             std::string username, password;
             iss >> username >> password;
-            
             if (authenticateClient(clientId, username, password)) {
                 client->authenticated = true;
                 client->username = username;
-                
-                // Cấp phát VPN IP
                 if (assignVPNIP(clientId)) {
                     std::string response = "AUTH_OK|Authentication successful|VPN_IP:" + client->assignedVpnIP + "\n";
                     sendToClient(clientId, response);
@@ -277,6 +308,16 @@ void VPNServer::handleClient(int clientId) {
             } else {
                 sendToClient(clientId, "AUTH_FAIL|Invalid credentials\n");
                 std::cout << "[WARN] Client " << clientId << " authentication failed\n";
+            }
+        }
+        else if (command == "PACKET") {
+            if (client->authenticated && bytesReceived > 7) { 
+                const char* packetData = buffer + 7; 
+                int packetSize = bytesReceived - 7;
+                std::cout << "[RECV] Packet from client " << clientId 
+                          << " (" << packetSize << " bytes)\n";
+                
+                injectPacketFromClient(clientId, packetData, packetSize);
             }
         }
         else if (command == "PING") {
@@ -301,7 +342,7 @@ void VPNServer::handleClient(int clientId) {
                 sendToClient(clientId, status);
             }
             else if (command == "DATA") {
-                std::cout << "[DEBUG] Data từ client " << clientId << ": " << message << "\n";
+                std::cout << "[DEBUG] Data tá»« client " << clientId << ": " << message << "\n";
                 sendToClient(clientId, "ACK|Data received\n");
             }
         }
@@ -309,14 +350,11 @@ void VPNServer::handleClient(int clientId) {
             sendToClient(clientId, "ERROR|Please authenticate first\n");
         }
     }
-
     std::cout << "[INFO] Client " << clientId << " disconnected\n";
     removeClient(clientId);
 }
 
 bool VPNServer::authenticateClient(int clientId, const std::string& username, const std::string& password) {
-    // Xác thực đơn giản - chấp nhận mọi username/password không rỗng
-    // Trong thực tế nên sử dụng database hoặc file cấu hình
     return !username.empty() && !password.empty();
 }
 
@@ -324,15 +362,12 @@ bool VPNServer::assignVPNIP(int clientId) {
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = clients.find(clientId);
     if (it == clients.end()) return false;
-    
     std::string assignedIP = ipPool.assignIP();
     if (assignedIP.empty()) {
-        return false; // Hết IP
+        return false;
     }
-    
     it->second.assignedVpnIP = assignedIP;
     it->second.ipAssigned = true;
-    
     return true;
 }
 
@@ -380,7 +415,6 @@ void VPNServer::removeClient(int clientId) {
             close(it->second.socket);
         }
         
-        // Release VPN IP
         if (it->second.ipAssigned) {
             ipPool.releaseIP(it->second.assignedVpnIP);
             std::cout << "[INFO] Released VPN IP: " << it->second.assignedVpnIP << "\n";
@@ -413,8 +447,6 @@ std::string VPNServer::getServerIP() const {
             }
         }
     #else
-    // Code này lấy IP LOCAL của server, KHÔNG phải IP công cộng
-    // Là IP LAN của server
         struct ifaddrs* ifaddrs_ptr;
         if (getifaddrs(&ifaddrs_ptr) == 0) {
             for (struct ifaddrs* ifa = ifaddrs_ptr; ifa; ifa = ifa->ifa_next) {
@@ -459,7 +491,6 @@ bool VPNServer::disconnectClient(int clientId) {
             it->second.socket = INVALID_SOCKET;
         }
         
-        // Release VPN IP
         if (it->second.ipAssigned) {
             ipPool.releaseIP(it->second.assignedVpnIP);
         }

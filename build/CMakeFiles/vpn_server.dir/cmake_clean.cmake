@@ -1,12 +1,8 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/vpn_server.dir/src/core/base64.cpp.o"
-  "CMakeFiles/vpn_server.dir/src/core/base64.cpp.o.d"
   "CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o"
   "CMakeFiles/vpn_server.dir/src/core/crypto_engine.cpp.o.d"
   "CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o"
   "CMakeFiles/vpn_server.dir/src/core/packet_handler.cpp.o.d"
-  "CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o"
-  "CMakeFiles/vpn_server.dir/src/core/real_vpn_server.cpp.o.d"
   "CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o"
   "CMakeFiles/vpn_server.dir/src/core/tunnel_manager.cpp.o.d"
   "CMakeFiles/vpn_server.dir/src/core/vpn_server.cpp.o"
@@ -17,8 +13,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/vpn_server.dir/src/network/socket_manager.cpp.o.d"
   "CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o"
   "CMakeFiles/vpn_server.dir/src/network/tun_interface.cpp.o.d"
-  "CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o"
-  "CMakeFiles/vpn_server.dir/src/real_vpn_main.cpp.o.d"
   "bin/vpn_server"
   "bin/vpn_server.pdb"
 )

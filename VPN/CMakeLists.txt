@@ -33,7 +33,6 @@ file(GLOB_RECURSE SERVER_SOURCES
 # )
 
 add_executable(vpn_server
-    src/real_vpn_main.cpp
     ${SERVER_SOURCES}
 )
 
