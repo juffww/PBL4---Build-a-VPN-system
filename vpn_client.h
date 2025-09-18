@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QString>
 #include <QNetworkAccessManager>
+#include "tun_interface.h"
 
 class VPNClient : public QObject
 {
@@ -23,7 +24,6 @@ public:
     void requestVPNIP();
     void requestStatus();
     QString getCurrentVPNIP() const { return assignedVpnIP; }
-
     quint64 getBytesReceived() const;
     quint64 getBytesSent() const;
 
@@ -49,12 +49,17 @@ private slots:
     void onReadyRead();
     void onError(QAbstractSocket::SocketError socketError);
     void sendPing();
-    void generateTUNTraffic();
+    void processTUNTraffic();  // Renamed from generateTUNTraffic
 
 private:
+    // Authentication and communication
     void authenticate(const QString& username, const QString& password);
     void sendMessage(const QString& message);
     void parseServerMessage(const QString& message);
+
+    // NEW: Packet handling functions
+    void sendPacketToServer(const QByteArray& packetData);
+    void writePacketToTUN(const QByteArray& packetData);
 
     // Helper methods để xử lý message validation
     bool isValidTextMessage(const QString& message);
@@ -80,6 +85,15 @@ private:
     QNetworkAccessManager* networkManager;
     quint64 totalBytesReceived;
     quint64 totalBytesSent;
+
+    // TUN interface and packet handling
+    TUNInterface tun;
+    QByteArray tunReadBuffer;
+
+    // NEW: Packet data state management
+    int pendingPacketSize;
+    bool isReadingPacketData;
+    QByteArray pendingPacketData;
 };
 
 #endif // VPN_CLIENT_H
