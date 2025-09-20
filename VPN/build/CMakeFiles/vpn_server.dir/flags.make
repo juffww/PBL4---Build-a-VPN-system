@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/home/bao/Documents/PBL4/VPN -I/home/bao/Documents/PBL4/VPN/src -I/home/bao/Documents/PBL4/VPN/include
 
-CXX_FLAGS = -O3 -DNDEBUG -Wall -Wextra -O2 -std=gnu++17
+CXX_FLAGS = -Wall -Wextra -O2 -std=c++17
 

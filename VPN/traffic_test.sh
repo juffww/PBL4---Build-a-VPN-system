@@ -1,56 +1,63 @@
 #!/bin/bash
 
-echo "=== VPN Traffic Test Script ==="
+# Test script cho VPN tunnel
+# Chạy script này sau khi client đã kết nối thành công
+
+echo "=== VPN TUNNEL TEST SCRIPT ==="
+echo "Kiểm tra kết nối VPN và routing..."
 
 # Kiểm tra TUN interface
-echo "1. Checking TUN interface..."
-ip addr show tun0 2>/dev/null
-if [ $? -eq 0 ]; then
-    echo "✓ TUN interface exists"
-else
-    echo "✗ TUN interface not found"
-    exit 1
+echo "1. Kiểm tra TUN interface..."
+ip addr show | grep tun
+echo
+
+# Kiểm tra routing table
+echo "2. Kiểm tra routing table..."
+ip route show | grep -E "(tun|10\.8\.0)"
+echo
+
+# Test ping đến server VPN
+echo "3. Test ping đến VPN server (10.8.0.1)..."
+ping -c 3 10.8.0.1
+echo
+
+# Test ping đến client từ server (chạy trên server)
+if [ "$1" == "server" ]; then
+    echo "4. [SERVER] Test ping đến client (10.8.0.2)..."
+    ping -c 3 10.8.0.2
+    echo
 fi
 
-# Kiểm tra routes
-echo -e "\n2. Checking routes..."
-ip route | grep tun0
-if [ $? -eq 0 ]; then
-    echo "✓ TUN routes configured"
-else
-    echo "✗ No TUN routes found"
+# Test ping DNS server qua VPN
+echo "4. Test ping DNS server qua VPN..."
+ping -c 3 8.8.8.8
+echo
+
+# Test HTTP request qua VPN
+echo "5. Test HTTP request qua VPN..."
+curl -m 10 http://httpbin.org/ip 2>/dev/null | head -5
+echo
+
+# Test traceroute để xem routing path
+echo "6. Test traceroute đến 8.8.8.8..."
+traceroute -n -m 5 8.8.8.8 | head -8
+echo
+
+# Kiểm tra iptables rules (chỉ trên server)
+if [ "$1" == "server" ]; then
+    echo "7. [SERVER] Kiểm tra iptables NAT rules..."
+    iptables -t nat -L -n | grep -A 5 -B 5 "10.8.0"
+    echo
+    
+    echo "8. [SERVER] Kiểm tra FORWARD rules..."
+    iptables -L FORWARD -n | grep -A 5 -B 5 "10.8.0"
+    echo
 fi
 
-# Test ping qua TUN interface
-echo -e "\n3. Testing ping through TUN..."
-ping -c 3 -I tun0 8.8.8.8 2>/dev/null
-if [ $? -eq 0 ]; then
-    echo "✓ Ping through TUN successful"
-else
-    echo "⚠ Ping through TUN failed (expected if no internet routing)"
-fi
-
-# Tạo traffic test thật
-echo -e "\n4. Generating test traffic..."
-echo "Sending data to TUN interface..."
-
-# Gửi dữ liệu tới TUN để test
-for i in {1..5}; do
-    echo "Test packet $i from $(date)" | socat - TUN:10.8.0.1/24,tun-type=tun,iff-no-pi 2>/dev/null &
-    sleep 1
-done
-
-echo "✓ Test traffic generated"
-
-# Hiển thị TUN stats
-echo -e "\n5. Current TUN statistics:"
-if [ -f /sys/class/net/tun0/statistics/rx_bytes ]; then
-    echo "RX bytes: $(cat /sys/class/net/tun0/statistics/rx_bytes)"
-    echo "TX bytes: $(cat /sys/class/net/tun0/statistics/tx_bytes)"
-    echo "RX packets: $(cat /sys/class/net/tun0/statistics/rx_packets)"
-    echo "TX packets: $(cat /sys/class/net/tun0/statistics/tx_packets)"
-else
-    echo "⚠ TUN statistics not available"
-fi
-
-echo -e "\n=== Test completed ==="
+echo "=== TEST HOÀN THÀNH ==="
+echo
+echo "Hướng dẫn debug:"
+echo "- Nếu ping 10.8.0.1 FAIL: Kiểm tra TUN interface client"
+echo "- Nếu ping 8.8.8.8 FAIL: Kiểm tra routing và NAT trên server"
+echo "- Nếu HTTP request FAIL: Kiểm tra DNS resolution và NAT"
+echo "- Xem log server và client để debug packet flow"

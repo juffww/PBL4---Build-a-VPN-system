@@ -4,6 +4,7 @@ project(VPNProject VERSION 1.0.0)
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)  # ép chuẩn, tránh gnu++11
 
 # Find required packages
 find_package(Threads REQUIRED)
@@ -20,21 +21,24 @@ endif()
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-file(GLOB_RECURSE SERVER_SOURCES
-    src/core/*.cpp
-    src/network/*.cpp
-)
-
-# VPN Server executable
-# add_executable(vpn_server
-#     main.cpp
-#     src/core/vpn_server.cpp
-#     src/core/vpn_server.h
+# file(GLOB_RECURSE SERVER_SOURCES
+#     src/core/*.cpp
+#     src/network/*.cpp
 # )
 
+# add_executable(vpn_server
+#     ${SERVER_SOURCES}
+# )
 add_executable(vpn_server
-    ${SERVER_SOURCES}
+    src/main.cpp
+    src/core/vpn_server.cpp
+    src/core/client_manager.cpp
+    src/core/packet_handler.cpp
+    src/core/tunnel_manager.cpp
+    src/network/tun_interface.cpp
+    src/network/socket_manager.cpp
 )
+
 
 target_include_directories(vpn_server PRIVATE
     ${CMAKE_SOURCE_DIR}

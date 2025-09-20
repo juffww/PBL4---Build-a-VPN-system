@@ -7,12 +7,23 @@ mkdir -p src/core src/network
 
 # 2. Compile
 echo "Compiling..."
+# g++ -std=c++11 -pthread -o vpn_server \
+#     src/main.cpp \
+#     src/core/vpn_server.cpp \
+#     src/network/tun_interface.cpp \
+#     src/network/socket_manager.cpp \
+#     src/core/client_manager.cpp\
+#     -I./src
 g++ -std=c++11 -pthread -o vpn_server \
     src/main.cpp \
     src/core/vpn_server.cpp \
+    src/core/client_manager.cpp \
+    src/core/packet_handler.cpp \
+    src/core/tunnel_manager.cpp \
     src/network/tun_interface.cpp \
     src/network/socket_manager.cpp \
     -I./src
+
 
 if [ $? -eq 0 ]; then
     echo "✓ Compile thành công"
@@ -24,7 +35,7 @@ fi
 # 3. Kiểm tra permissions
 if [ "$EUID" -ne 0 ]; then
     echo "⚠ Cần chạy với quyền root để tạo TUN interface"
-    echo "Sử dụng: sudo ./test_vpn.sh"
+    echo "Sử dụng: sudo ./build.sh"
     exit 1
 fi
 

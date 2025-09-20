@@ -13,8 +13,6 @@ private:
     std::string serverIP;
     uint64_t bytesReceived;
     uint64_t bytesSent;
-    bool configureServerMode();
-    bool configureClientMode();
 public:
     TUNInterface(const std::string& name = "tun0");
     ~TUNInterface();
@@ -29,6 +27,8 @@ public:
     int writePacket(const char* buffer, int size);
     void close();
     void resetStats();
+    // Getters
+    std::string getInterfaceName() const { return interfaceName; }
     std::string getName() const { return interfaceName; }
     std::string getIP() const { return vpnIP; }
     std::string getMask() const { return subnetMask; }
@@ -37,3 +37,4 @@ public:
     uint64_t getBytesSent() const { return bytesSent; }
 };
 #endif
+

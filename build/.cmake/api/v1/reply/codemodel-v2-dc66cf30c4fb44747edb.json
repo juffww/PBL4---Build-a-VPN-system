@@ -7,7 +7,7 @@
 				{
 					"build" : ".",
 					"hasInstallRule" : true,
-					"jsonFile" : "directory-.-Debug-94bd0b72b5d63aa427a2.json",
+					"jsonFile" : "directory-.-Debug-742911c8a8fbd1468b0d.json",
 					"minimumCMakeVersion" : 
 					{
 						"string" : "3.16"
@@ -40,7 +40,7 @@
 				{
 					"directoryIndex" : 0,
 					"id" : "vpn_server::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-vpn_server-Debug-2d12b234ec6f8ab98c76.json",
+					"jsonFile" : "target-vpn_server-Debug-e57c3bb8638607b4b43d.json",
 					"name" : "vpn_server",
 					"projectIndex" : 0
 				}

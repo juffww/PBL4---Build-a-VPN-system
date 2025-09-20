@@ -66,7 +66,11 @@ private:
     std::chrono::steady_clock::time_point startTime;
     std::thread tunThread;
     std::atomic<bool> tunThreadRunning;
+    // Network configuration
+    void setupAdvancedNAT();
     void startTUNProcessing();
+    // Client management helpers  
+    bool isVPNClient(const std::string& ip);
     void forwardPacketToClient(const char* packet, int size, const std::string& destIP);
     void injectPacketFromClient(int clientId, const char* packet, int size);
     IPPool ipPool;
@@ -95,6 +99,6 @@ public:
     std::string getClientVPNIP(int clientId);
     std::vector<std::string> getVPNStats();
     std::vector<std::string> getAllAssignedVPNIPs() const { return ipPool.getAllAssignedIPs();};
-    TUNInterface* getTUNInterface() const { return tunInterface;};                                  
+    TUNInterface* getTUNInterface() const { return tunInterface;};                               
 };
 #endif
