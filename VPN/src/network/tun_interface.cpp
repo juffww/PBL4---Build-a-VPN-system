@@ -30,32 +30,45 @@ bool TUNInterface::create() {
         std::cerr << "[ERROR] /dev/net/tun does not exist. Please load tun module: modprobe tun" << std::endl;
         return false;
     }
+
+    // Xoá tun0 cũ nếu có
+    if (!interfaceName.empty()) {
+        std::string delCmd = "ip link del " + interfaceName + " 2>/dev/null";
+        system(delCmd.c_str());
+    }
+
     tunFd = open("/dev/net/tun", O_RDWR);
     if (tunFd < 0) {
         std::cerr << "[ERROR] Cannot open /dev/net/tun: " << strerror(errno) << std::endl;
         return false;
     }
+
     struct ifreq ifr;
     memset(&ifr, 0, sizeof(ifr));
     ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
-    if (!interfaceName.empty()) {
-        strncpy(ifr.ifr_name, interfaceName.c_str(), IFNAMSIZ - 1);
-    }
+    strncpy(ifr.ifr_name, interfaceName.c_str(), IFNAMSIZ - 1);
+
     if (ioctl(tunFd, TUNSETIFF, (void*)&ifr) < 0) {
-        std::cerr << "[ERROR] Cannot create TUN interface: " << strerror(errno) << std::endl;
+        std::cerr << "[ERROR] Cannot create TUN interface " << interfaceName 
+                  << ": " << strerror(errno) << std::endl;
         ::close(tunFd);
         tunFd = -1;
         return false;
     }
+
     interfaceName = ifr.ifr_name;
     isOpen = true;
+
+    // Non-blocking mode
     int flags = fcntl(tunFd, F_GETFL, 0);
     if (flags != -1) {
         fcntl(tunFd, F_SETFL, flags | O_NONBLOCK);
     }
+
     std::cout << "[INFO] Created TUN interface: " << interfaceName << std::endl;
     return true;
 }
+
 
 bool TUNInterface::configure(const std::string& ip, const std::string& mask, const std::string& server, bool isServerMode) {
     if (!isOpen) {

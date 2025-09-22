@@ -1,9 +1,9 @@
 #include "client_manager.h"
+#include "packet_handler.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <cstring>
-#include "packet_handler.h"   
 #ifdef _WIN32
     #include <ws2tcpip.h>
     #define close closesocket
@@ -357,27 +357,4 @@ std::vector<std::string> ClientManager::getClientStats() {
     stats.push_back("Assigned VPN IPs: " + std::to_string(assignedIPs));
     
     return stats;
-}
-
-void ClientManager::disconnectAllClients() {
-    std::lock_guard<std::mutex> lock(clientsMutex);
-    for (auto& pair : clients) {
-        if (pair.second.socket != INVALID_SOCKET) {
-            close(pair.second.socket);
-            pair.second.socket = INVALID_SOCKET;
-        }
-        if (pair.second.ipAssigned) {
-            releaseVPNIP(pair.first);
-        }
-    }
-    clients.clear();
-    std::cout << "[CLIENT_MGR] All clients disconnected\n";
-}
-
-SOCKET ClientManager::getClientSocket(int clientId) const {
-    auto it = clients.find(clientId);
-    if (it != clients.end()) {
-        return it->second.socket;
-    }
-    return INVALID_SOCKET; 
 }

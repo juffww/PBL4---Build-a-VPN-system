@@ -1,104 +1,91 @@
 #ifndef VPN_SERVER_H
 #define VPN_SERVER_H
+
 #include <string>
-#include <map>
 #include <vector>
 #include <thread>
-#include <mutex>
-#include <chrono>
 #include <atomic>
-#include <queue>
+#include <chrono>
 #include <sstream>
-#include <netinet/ip.h>
-#include <sys/socket.h>
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL 0
-#endif
-#include "network/tun_interface.h"
 #ifdef _WIN32
-#include <winsock2.h>
-#define SOCKET_ERROR -1
-#define INVALID_SOCKET -1
-typedef SOCKET SOCKET;
+    #include <winsock2.h>
+    typedef SOCKET SOCKET;
+    #define INVALID_SOCKET INVALID_SOCKET
+    #define SOCKET_ERROR SOCKET_ERROR
 #else
-#define SOCKET int
-#define INVALID_SOCKET -1
-#define SOCKET_ERROR -1
+    typedef int SOCKET;
+    #define INVALID_SOCKET -1
+    #define SOCKET_ERROR -1
+    #include <ifaddrs.h>
 #endif
-struct ClientInfo {
-    int id;
-    SOCKET socket;
-    std::string ip;
-    int port;
-    std::string connectTime;
-    std::chrono::steady_clock::time_point connectedAt;
-    bool authenticated;
-    std::string username;
-    std::string assignedVpnIP;
-    std::string realIP;
-    bool ipAssigned;
-    int bytesSent = 0;      // thêm
-    int bytesReceived = 0;  // thêm
-};
-class IPPool {
-private:
-    std::queue<std::string> availableIPs;
-    std::map<std::string, bool> ipUsage;
-    mutable std::mutex poolMutex;
-    std::string baseNetwork;
-public:
-    IPPool(const std::string& network = "10.8.0", int startRange = 2, int endRange = 254);
-    std::string assignIP();
-    void releaseIP(const std::string& ip);
-    int getAvailableCount();
-    std::vector<std::string> getAllAssignedIPs() const;
-};
+
+// Include component headers
+#include "client_manager.h"
+#include "tunnel_manager.h"
+#include "packet_handler.h"
+#include "../network/tun_interface.h"
+
 class VPNServer {
 private:
+    // Server configuration
     int serverPort;
     SOCKET serverSocket;
     std::atomic<bool> isRunning;
     std::atomic<bool> shouldStop;
-    int nextClientId;
-    std::map<int, ClientInfo> clients;
-    mutable std::mutex clientsMutex;
-    std::vector<std::thread> clientThreads;
     std::chrono::steady_clock::time_point startTime;
-    std::thread tunThread;
-    std::atomic<bool> tunThreadRunning;
-    // Network configuration
-    void setupAdvancedNAT();
-    void startTUNProcessing();
-    // Client management helpers  
-    bool isVPNClient(const std::string& ip);
-    void forwardPacketToClient(const char* packet, int size, const std::string& destIP);
-    void injectPacketFromClient(int clientId, const char* packet, int size);
-    IPPool ipPool;
-    TUNInterface* tunInterface;
+    
+    // Component managers
+    ClientManager* clientManager;
+    TunnelManager* tunnelManager;
+    PacketHandler* packetHandler;
+    
+    // Client handling threads
+    std::vector<std::thread> clientThreads;
+    
+    // Private methods
+    bool initializeServerSocket();
+    void acceptConnections();
+    void handleClient(int clientId);
+    bool processClientMessage(int clientId, const std::string& message);
+    
+    // Command handlers
+    bool handleAuthCommand(int clientId, std::istringstream& iss);
+    bool handlePingCommand(int clientId);
+    bool handleStatusCommand(int clientId);
+    
+    // Cleanup
+    void cleanup();
+
 public:
-    VPNServer(int port);
+    explicit VPNServer(int port = 1194);
     ~VPNServer();
+    
+    // Core server operations
     bool initialize();
     void start();
     void stop();
-    void acceptConnections();
-    void handleClient(int clientId);
-    bool authenticateClient(int clientId, const std::string& username, const std::string& password);
-    void sendToClient(int clientId, const std::string& message);
-    void broadcastToClients(const std::string& message);
-    void removeClient(int clientId);
-    std::string getCurrentTime();
+    
+    // Server information
+    int getPort() const;
     int getClientCount() const;
     std::string getServerIP() const;
     long long getUptime() const;
+    
+    // Client management
     std::vector<ClientInfo> getConnectedClients() const;
     bool disconnectClient(int clientId);
-    int getPort() const { return serverPort; }
-    bool assignVPNIP(int clientId);
-    void releaseVPNIP(int clientId);
-    std::string getClientVPNIP(int clientId);
+    std::vector<std::string> getAllAssignedVPNIPs() const;
+    
+    // Network interface access
+    TUNInterface* getTUNInterface() const;
+    
+    // Statistics
     std::vector<std::string> getVPNStats();
-    std::vector<std::string> getAllAssignedVPNIPs() const { return ipPool.getAllAssignedIPs();};
-    TUNInterface* getTUNInterface() const { return tunInterface;};                               
+
+    ClientManager* getClientManager() const { return clientManager; }
+    PacketHandler* getPacketHandler() const { return packetHandler; }
+    std::vector<std::string> getPacketStats();
+
 };
-#endif
+
+#endif // VPN_SERVER_H

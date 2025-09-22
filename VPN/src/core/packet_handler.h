@@ -52,6 +52,18 @@ public:
     // Statistics
     PacketStats getPacketStats() const;
     void resetPacketStats();
+
+    void debugRawPacket(const char* packet, int size);
+    bool validateIPPacket(const char* packet, int size);
+    std::string extractSourceIP(const char* packet);
+    void handleValidatedPacket(const char* packet, int size,
+                               const std::string& srcIP,
+                               const std::string& dstIP);
+    bool parsePacketIPs(const char* packet, std::string& srcIP, std::string& dstIP);
+    void logProtocolDetails(const char* packet, int size);
+    void logTCPDetails(const char* tcpHeader, int size);
+    void logUDPDetails(const char* udpHeader, int size);
+    void logICMPDetails(const char* icmpHeader, int size);
 };
 
 #endif // PACKET_HANDLER_H

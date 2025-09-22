@@ -37,4 +37,3 @@ public:
     uint64_t getBytesSent() const { return bytesSent; }
 };
 #endif
-

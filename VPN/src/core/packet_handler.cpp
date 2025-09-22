@@ -1,6 +1,6 @@
 #include "packet_handler.h"
-#include "tunnel_manager.h"
 #include "client_manager.h"
+#include "tunnel_manager.h"
 #include <iostream>
 #include <cstring>
 #include <sstream>
@@ -35,13 +35,13 @@ void PacketHandler::handleTUNPacket(const char* packet, int size, const std::str
         return;
     }
     
+    // Kiểm tra xem đích có phải là VPN client không
     if (isVPNClient(dstIP)) {
         std::cout << "[PACKET] Forwarding to VPN client: " << dstIP << "\n";
         forwardPacketToClient(packet, size, dstIP);
-        updatePacketStats("TO_CLIENT", size);
     } else {
         std::cout << "[PACKET] Packet from " << srcIP << " to Internet (" << dstIP << ")\n";
-        updatePacketStats("TO_INTERNET", size);
+        // Packet sẽ được xử lý bởi kernel routing và iptables NAT
         logPacketInfo(packet, size, srcIP, dstIP, "TO_INTERNET");
     }
 }
@@ -52,7 +52,8 @@ void PacketHandler::handleClientPacket(int clientId, const char* packet, int siz
         return;
     }
     
-    if (size >= 20) {
+    // Parse packet để lấy thông tin
+    //if (size >= 20) {
         struct iphdr {
             uint8_t version_ihl;
             uint8_t tos;
@@ -67,11 +68,6 @@ void PacketHandler::handleClientPacket(int clientId, const char* packet, int siz
         };
         
         iphdr* ip_header = (iphdr*)packet;
-        if ((ip_header->version_ihl & 0xF0) != 0x40) {
-            std::cout << "[WARN] Invalid IP header version: " << (int)(ip_header->version_ihl >> 4) << "\n";
-            return;
-        }
-
         char src_ip[16], dst_ip[16];
         inet_ntop(AF_INET, &ip_header->saddr, src_ip, 16);
         inet_ntop(AF_INET, &ip_header->daddr, dst_ip, 16);
@@ -81,14 +77,16 @@ void PacketHandler::handleClientPacket(int clientId, const char* packet, int siz
                   << " (Protocol: " << (int)ip_header->protocol 
                   << ", Size: " << size << " bytes)\n";
         
-        updatePacketStats("FROM_CLIENT", size);
         logPacketInfo(packet, size, std::string(src_ip), std::string(dst_ip), "FROM_CLIENT");
-    }
+    //}
     
+    // Inject packet vào TUN interface
     if (tunnelManager->injectPacket(packet, size)) {
         std::cout << "[PACKET] Successfully injected packet from client " << clientId << " into TUN\n";
+        
+        // Cập nhật thống kê client
         if (clientManager) {
-            clientManager->updateClientStats(clientId, 0, size);
+            clientManager->updateClientStats(clientId, 0, size); // bytes received from client
         }
     } else {
         std::cout << "[ERROR] Failed to inject packet from client " << clientId << "\n";
@@ -101,15 +99,22 @@ void PacketHandler::forwardPacketToClient(const char* packet, int size, const st
         return;
     }
     
+    // Tìm client có VPN IP tương ứng
     int clientId = clientManager->findClientByVPNIP(destIP);
     if (clientId != -1) {
-        std::string packetMsg = "PACKET|" + std::to_string(size) + "\n";
+        // Tạo packet message với binary data
+        std::string packetMsg = "PACKET";
+        packetMsg.append(packet, size);
+        packetMsg += "\n";
+        
         if (clientManager->sendToClient(clientId, packetMsg)) {
-            clientManager->sendToClient(clientId, std::string(packet, size));
             std::cout << "[PACKET] Packet forwarded to client " << clientId 
                       << " (VPN IP: " << destIP << ", Size: " << size << " bytes)\n";
-            clientManager->updateClientStats(clientId, size, 0);
-            updatePacketStats("TO_CLIENT", size);
+            
+            // Cập nhật thống kê
+            clientManager->updateClientStats(clientId, size, 0); // bytes sent to client
+            
+            logPacketInfo(packet, size, "SERVER", destIP, "TO_CLIENT");
         } else {
             std::cout << "[ERROR] Failed to forward packet to client " << clientId << "\n";
         }
@@ -119,11 +124,12 @@ void PacketHandler::forwardPacketToClient(const char* packet, int size, const st
 }
 
 bool PacketHandler::isVPNClient(const std::string& ip) {
+    // Kiểm tra IP có trong subnet VPN 10.8.0.x không (trừ server IP)
     return (ip.substr(0, 6) == "10.8.0" && ip != "10.8.0.1");
 }
 
 void PacketHandler::logPacketInfo(const char* packet, int size, const std::string& srcIP, const std::string& dstIP, const std::string& direction) {
-    if (size < 20) return;
+    //if (size < 20) return;
     
     struct iphdr {
         uint8_t version_ihl;
@@ -139,11 +145,6 @@ void PacketHandler::logPacketInfo(const char* packet, int size, const std::strin
     };
     
     iphdr* ip_header = (iphdr*)packet;
-    if ((ip_header->version_ihl & 0xF0) != 0x40) {
-        std::cout << "[WARN] Invalid IP packet: version_ihl=" << (int)ip_header->version_ihl << "\n";
-        return;
-    }
-    
     std::string protocolName = getProtocolName(ip_header->protocol);
     
     std::cout << "[PACKET_LOG] " << direction << " - " 
@@ -152,6 +153,7 @@ void PacketHandler::logPacketInfo(const char* packet, int size, const std::strin
               << " | " << size << " bytes"
               << " | TTL:" << (int)ip_header->ttl << "\n";
     
+    // Log chi tiết cho một số protocol quan trọng
     if (ip_header->protocol == IPPROTO_TCP && size >= 40) {
         logTCPInfo(packet + 20, size - 20);
     } else if (ip_header->protocol == IPPROTO_UDP && size >= 28) {
@@ -172,7 +174,7 @@ std::string PacketHandler::getProtocolName(uint8_t protocol) {
 }
 
 void PacketHandler::logTCPInfo(const char* tcpHeader, int size) {
-    if (size < 20) return;
+    //if (size < 20) return;
     
     struct tcphdr {
         uint16_t source;
@@ -191,6 +193,7 @@ void PacketHandler::logTCPInfo(const char* tcpHeader, int size) {
     
     std::cout << "[TCP_DETAIL] Port " << srcPort << " -> " << dstPort;
     
+    // Parse TCP flags
     uint8_t flags = (tcp->flags >> 8) & 0xFF;
     if (flags & 0x02) std::cout << " [SYN]";
     if (flags & 0x10) std::cout << " [ACK]";
@@ -202,7 +205,7 @@ void PacketHandler::logTCPInfo(const char* tcpHeader, int size) {
 }
 
 void PacketHandler::logUDPInfo(const char* udpHeader, int size) {
-    if (size < 8) return;
+    //if (size < 8) return;
     
     struct udphdr {
         uint16_t source;
@@ -221,7 +224,7 @@ void PacketHandler::logUDPInfo(const char* udpHeader, int size) {
 }
 
 void PacketHandler::logICMPInfo(const char* icmpHeader, int size) {
-    if (size < 8) return;
+    //if (size < 8) return;
     
     struct icmphdr {
         uint8_t type;

@@ -1,240 +1,460 @@
 #include "vpn_server.h"
 #include <iostream>
-#include <cstring>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <sstream>
+#include <cstring>
+#include <iomanip>
+#include <algorithm>
+#include <thread>
+#include <chrono>
+#ifdef _WIN32
+    #include <ws2tcpip.h>
+    #define close closesocket
+    #define MSG_NOSIGNAL 0
+#else
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <errno.h>
+#endif
 
-VPNServer::VPNServer(int port)
-    : serverPort(port), serverSocket(INVALID_SOCKET), isRunning(false), shouldStop(false),
-      clientManager(new ClientManager()), tunnelManager(nullptr), packetHandler(nullptr),
-      startTime(std::chrono::steady_clock::now()) {
+VPNServer::VPNServer(int port) 
+    : serverPort(port), serverSocket(INVALID_SOCKET), isRunning(false), 
+      shouldStop(false), clientManager(nullptr), tunnelManager(nullptr), 
+      packetHandler(nullptr) {
 }
 
 VPNServer::~VPNServer() {
     stop();
-    delete tunnelManager;
-    delete packetHandler;
-    delete clientManager;
+    cleanup();
 }
 
 bool VPNServer::initialize() {
+    std::cout << "[VPN_SERVER] Initializing VPN Server...\n";
+    
+    // Khởi tạo các manager components
+    clientManager = new ClientManager();
+    tunnelManager = new TunnelManager("tun0");
     packetHandler = new PacketHandler();
-    tunnelManager = new TunnelManager("tun0", "10.8.0.1", "255.255.255.0");
-    tunnelManager->setClientManager(clientManager);
-
-    if (!tunnelManager->initialize()) {
-        std::cerr << "[ERROR] Failed to initialize TunnelManager\n";
+    
+    // Thiết lập mối quan hệ giữa các components
+    packetHandler->addClientManager(clientManager);
+    packetHandler->setTunnelManager(tunnelManager);
+    clientManager->setPacketHandler(packetHandler);
+    
+    // Khởi tạo TUN interface
+    if (!tunnelManager->initialize("10.8.0.1", "10.8.0", packetHandler)) {
+        std::cout << "[ERROR] Cannot initialize tunnel manager\n";
         return false;
     }
-
+    
+    // Tạo server socket
     if (!initializeServerSocket()) {
-        std::cerr << "[ERROR] Failed to initialize server socket\n";
+        std::cout << "[ERROR] Cannot initialize server socket\n";
         return false;
     }
-
-    std::cout << "[INFO] VPNServer initialized\n";
+    
+    std::cout << "[VPN_SERVER] VPN Server initialized successfully on port " << serverPort << "\n";
     return true;
 }
 
 bool VPNServer::initializeServerSocket() {
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == INVALID_SOCKET) {
-        std::cerr << "[ERROR] Failed to create socket: " << strerror(errno) << "\n";
+        std::cout << "[ERROR] Cannot create socket\n";
         return false;
     }
-
+    
     int opt = 1;
-    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        std::cerr << "[ERROR] Failed to set socket options: " << strerror(errno) << "\n";
+    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 
+                   (char*)&opt, sizeof(opt)) < 0) {
+        std::cout << "[WARN] Cannot set SO_REUSEADDR\n";
+    }
+    
+    struct sockaddr_in serverAddr;
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(serverPort);
+    
+    if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cout << "[ERROR] Cannot bind socket on port " << serverPort << "\n";
         close(serverSocket);
+        serverSocket = INVALID_SOCKET;
         return false;
     }
-
-    sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(serverPort);
-
-    if (bind(serverSocket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "[ERROR] Failed to bind socket: " << strerror(errno) << "\n";
+    
+    if (listen(serverSocket, 10) == SOCKET_ERROR) {
+        std::cout << "[ERROR] Cannot listen on socket\n";
         close(serverSocket);
+        serverSocket = INVALID_SOCKET;
         return false;
     }
-
-    if (listen(serverSocket, 10) < 0) {
-        std::cerr << "[ERROR] Failed to listen on socket: " << strerror(errno) << "\n";
-        close(serverSocket);
-        return false;
-    }
-
+    
     return true;
 }
 
 void VPNServer::start() {
-    if (isRunning) return;
+    if (serverSocket == INVALID_SOCKET) {
+        std::cout << "[ERROR] Server not initialized\n";
+        return;
+    }
+    
     isRunning = true;
     shouldStop = false;
+    startTime = std::chrono::steady_clock::now();
+    
+    // Start tunnel processing
     tunnelManager->start();
-    std::cout << "[INFO] VPN Server started on port " << serverPort << "\n";
-
-    std::thread([this]() { acceptConnections(); }).detach();
-}
-
-void VPNServer::stop() {
-    shouldStop = true;
-    isRunning = false;
-    if (serverSocket != INVALID_SOCKET) {
-        close(serverSocket);
-        serverSocket = INVALID_SOCKET;
-    }
-    tunnelManager->stop();
-    clientManager->disconnectAllClients();
-    cleanup();
-    std::cout << "[INFO] VPN Server stopped\n";
+    
+    std::cout << "[INFO] ========================================\n";
+    std::cout << "[INFO] VPN Server Started Successfully!\n";
+    std::cout << "[INFO] Server VPN IP: 10.8.0.1/24\n";
+    std::cout << "[INFO] Client IP Range: 10.8.0.2 - 10.8.0.254\n";
+    std::cout << "[INFO] Listening on port: " << serverPort << "\n";
+    std::cout << "[INFO] IP Pool: " << clientManager->getAvailableIPs() << " IPs available\n";
+    std::cout << "[INFO] ========================================\n";
+    
+    acceptConnections();
 }
 
 void VPNServer::acceptConnections() {
-    while (isRunning && !shouldStop) {
-        sockaddr_in client_addr;
-        socklen_t addr_len = sizeof(client_addr);
-        SOCKET client_fd = accept(serverSocket, (struct sockaddr*)&client_addr, &addr_len);
-        if (client_fd != INVALID_SOCKET) {
-            std::cout << "[INFO] New client connection received\n";
-            int clientId = clientManager->addClient(client_fd);
-            clientThreads.emplace_back([this, clientId]() { handleClient(clientId); });
+    while (!shouldStop && isRunning) {
+        struct sockaddr_in clientAddr;
+        socklen_t clientLen = sizeof(clientAddr);
+        SOCKET clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientLen);
+        
+        if (clientSocket == INVALID_SOCKET) {
+            if (!shouldStop) {
+                std::cout << "[ERROR] Accept connection error\n";
+            }
+            continue;
         }
-        usleep(100000); // Ngủ 100ms để tránh CPU overload
+        
+        std::string clientIP = inet_ntoa(clientAddr.sin_addr);
+        int clientPort = ntohs(clientAddr.sin_port);
+        
+        // Add client to manager
+        int clientId = clientManager->addClient(clientSocket, clientIP, clientPort);
+        
+        // Start client handling thread
+        clientThreads.emplace_back([this, clientId]() {
+            handleClient(clientId);
+        });
     }
 }
 
 void VPNServer::handleClient(int clientId) {
-    char buffer[1024];
-    while (isRunning && !shouldStop) {
-        ssize_t bytes = recv(clientManager->getClientSocket(clientId), buffer, sizeof(buffer) - 1, 0);
-        if (bytes <= 0) {
-            std::cerr << "[INFO] Client " << clientId << " disconnected\n";
-            disconnectClient(clientId);
+    ClientInfo* client = clientManager->getClientInfo(clientId);
+    if (!client) return;
+    
+    char buffer[4096];
+    std::string welcomeMsg = "WELCOME|VPN Server 2.0.0|Ready for authentication\n";
+    clientManager->sendToClient(clientId, welcomeMsg);
+    
+    std::string messageBuffer; // Buffer for incomplete messages
+    
+    while (!shouldStop && client->socket != INVALID_SOCKET) {
+        int bytesReceived = recv(client->socket, buffer, sizeof(buffer) - 1, 0);
+        if (bytesReceived <= 0) {
+            std::cout << "[INFO] Client " << clientId << " disconnected (recv=" << bytesReceived << ")\n";
             break;
         }
-        buffer[bytes] = '\0';
-        processClientMessage(clientId, std::string(buffer));
+        
+        // Add received data to buffer
+        messageBuffer.append(buffer, bytesReceived);
+        
+        // Process complete messages
+        size_t pos = 0;
+        while ((pos = messageBuffer.find('\n')) != std::string::npos) {
+            std::string message = messageBuffer.substr(0, pos);
+            messageBuffer.erase(0, pos + 1);
+            
+            // Process message
+            if (!processClientMessage(clientId, message)) {
+                break;
+            }
+        }
     }
+    
+    std::cout << "[INFO] Client " << clientId << " disconnected\n";
+    clientManager->removeClient(clientId);
 }
 
 bool VPNServer::processClientMessage(int clientId, const std::string& message) {
+    // Check if this is a packet message
+    if (message.substr(0, 6) == "PACKET") {
+        if (clientManager->isClientAuthenticated(clientId) && message.length() > 6) {
+            const char* packetData = message.c_str() + 6;
+            int packetSize = message.length() - 6;
+            
+            std::cout << "[CLIENT->TUN] Received " << packetSize << " bytes from client " << clientId << "\n";
+            
+            // Handle packet through client manager
+            clientManager->handleClientPacket(clientId, packetData, packetSize);
+        } else {
+            std::cout << "[WARN] Received packet from unauthenticated client " << clientId << "\n";
+        }
+        return true;
+    }
+    
+    // Handle regular text commands
     std::istringstream iss(message);
     std::string command;
     iss >> command;
-
-    if (command == "AUTH") return handleAuthCommand(clientId, iss);
-    if (command == "PING") return handlePingCommand(clientId);
-    if (command == "STATUS") return handleStatusCommand(clientId);
-
-    std::cerr << "[WARN] Unknown command from client " << clientId << ": " << message << "\n";
-    return false;
+    
+    if (command == "AUTH") {
+        return handleAuthCommand(clientId, iss);
+    }
+    else if (command == "PING") {
+        return handlePingCommand(clientId);
+    }
+    else if (command == "GET_STATUS") {
+        return handleStatusCommand(clientId);
+    }
+    else if (command == "DISCONNECT") {
+        clientManager->sendToClient(clientId, "BYE|Goodbye\n");
+        return false; // Signal to disconnect
+    }
+    else {
+        if (!clientManager->isClientAuthenticated(clientId)) {
+            clientManager->sendToClient(clientId, "ERROR|Please authenticate first\n");
+        } else {
+            std::cout << "[WARN] Unknown command from client " << clientId << ": " << command << "\n";
+            clientManager->sendToClient(clientId, "ERROR|Unknown command\n");
+        }
+    }
+    
+    return true;
 }
 
 bool VPNServer::handleAuthCommand(int clientId, std::istringstream& iss) {
     std::string username, password;
     iss >> username >> password;
+    
     if (clientManager->authenticateClient(clientId, username, password)) {
-        std::cout << "[INFO] Client " << clientId << " authenticated\n";
-        return true;
+        if (clientManager->assignVPNIP(clientId)) {
+            std::string vpnIP = clientManager->getClientVPNIP(clientId);
+            std::string response = "AUTH_OK|Authentication successful|VPN_IP:" + vpnIP + 
+                                 "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24\n";
+            clientManager->sendToClient(clientId, response);
+            std::cout << "[AUTH] Client " << clientId << " (" << username 
+                      << ") authenticated, VPN IP: " << vpnIP << "\n";
+        } else {
+            clientManager->sendToClient(clientId, "AUTH_FAIL|No VPN IP available\n");
+            std::cout << "[AUTH] Client " << clientId << " authentication failed - no IP available\n";
+        }
+    } else {
+        clientManager->sendToClient(clientId, "AUTH_FAIL|Invalid credentials\n");
+        std::cout << "[AUTH] Client " << clientId << " authentication failed - invalid credentials\n";
     }
-    std::cerr << "[ERROR] Client " << clientId << " authentication failed\n";
-    return false;
+    
+    return true;
 }
 
 bool VPNServer::handlePingCommand(int clientId) {
-    std::string response = "PONG";
-    send(clientManager->getClientSocket(clientId), response.c_str(), response.size(), 0);
+    std::string pongMsg = "PONG|" + std::to_string(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count()) + "\n";
+    clientManager->sendToClient(clientId, pongMsg);
     return true;
 }
 
 bool VPNServer::handleStatusCommand(int clientId) {
-    std::vector<std::string> stats = getVPNStats();
-    std::string response = "STATUS ";
-    for (const auto& stat : stats) {
-        response += stat + "\n";
+    if (clientManager->isClientAuthenticated(clientId)) {
+        std::string vpnIP = clientManager->getClientVPNIP(clientId);
+        ClientInfo* client = clientManager->getClientInfo(clientId);
+        
+        std::string status = "STATUS|Connected|VPN_IP:" + vpnIP + 
+                           "|SERVER_IP:10.8.0.1|CLIENTS:" + std::to_string(getClientCount());
+        
+        if (client) {
+            status += "|BYTES_SENT:" + std::to_string(client->bytesSent) +
+                     "|BYTES_RECV:" + std::to_string(client->bytesReceived);
+        }
+        
+        status += "\n";
+        clientManager->sendToClient(clientId, status);
+    } else {
+        clientManager->sendToClient(clientId, "ERROR|Not authenticated\n");
     }
-    send(clientManager->getClientSocket(clientId), response.c_str(), response.size(), 0);
     return true;
 }
 
-void VPNServer::cleanup() {
+void VPNServer::stop() {
+    std::cout << "[VPN_SERVER] Stopping VPN Server...\n";
+    
+    shouldStop = true;
+    isRunning = false;
+    
+    // Stop tunnel manager
+    if (tunnelManager) {
+        tunnelManager->stop();
+    }
+    
+    // Close server socket
+    if (serverSocket != INVALID_SOCKET) {
+        close(serverSocket);
+        serverSocket = INVALID_SOCKET;
+    }
+    
+    // Wait for client threads
     for (auto& thread : clientThreads) {
-        if (thread.joinable()) thread.join();
+        if (thread.joinable()) {
+            thread.join();
+        }
     }
     clientThreads.clear();
+    
+    std::cout << "[VPN_SERVER] VPN Server stopped\n";
 }
 
+void VPNServer::cleanup() {
+    if (clientManager) {
+        delete clientManager;
+        clientManager = nullptr;
+    }
+    
+    if (tunnelManager) {
+        delete tunnelManager;
+        tunnelManager = nullptr;
+    }
+    
+    if (packetHandler) {
+        delete packetHandler;
+        packetHandler = nullptr;
+    }
+}
+
+// Getter methods
 int VPNServer::getPort() const {
     return serverPort;
 }
 
 int VPNServer::getClientCount() const {
-    return clientManager->getClientCount();
+    return clientManager ? clientManager->getClientCount() : 0;
 }
 
 std::string VPNServer::getServerIP() const {
-    ifaddrs* ifa;
-    std::string ip = "0.0.0.0";
-    if (getifaddrs(&ifa) == 0) {
-        for (ifaddrs* i = ifa; i != nullptr; i = i->ifa_next) {
-            if (i->ifa_addr && i->ifa_addr->sa_family == AF_INET && strcmp(i->ifa_name, "lo") != 0) {
-                char ip_str[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &((sockaddr_in*)i->ifa_addr)->sin_addr, ip_str, INET_ADDRSTRLEN);
-                ip = ip_str;
-                break;
+    #ifdef _WIN32
+        char hostname[256];
+        if (gethostname(hostname, sizeof(hostname)) == 0) {
+            struct hostent* host = gethostbyname(hostname);
+            if (host) {
+                return std::string(inet_ntoa(*((struct in_addr*)host->h_addr)));
             }
         }
-        freeifaddrs(ifa);
-    }
-    return ip;
+    #else
+        struct ifaddrs* ifaddrs_ptr;
+        if (getifaddrs(&ifaddrs_ptr) == 0) {
+            for (struct ifaddrs* ifa = ifaddrs_ptr; ifa; ifa = ifa->ifa_next) {
+                if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
+                    std::string addr = inet_ntoa(((struct sockaddr_in*)ifa->ifa_addr)->sin_addr);
+                    if (addr != "127.0.0.1" && addr.substr(0, 6) != "10.8.0") {
+                        freeifaddrs(ifaddrs_ptr);
+                        return addr;
+                    }
+                }
+            }
+            freeifaddrs(ifaddrs_ptr);
+        }
+    #endif
+    return "127.0.0.1";
 }
 
 long long VPNServer::getUptime() const {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - startTime).count();
+    if (!isRunning) return 0;
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - startTime);
+    return duration.count();
 }
 
 std::vector<ClientInfo> VPNServer::getConnectedClients() const {
-    return clientManager->getConnectedClients();
+    return clientManager ? clientManager->getConnectedClients() : std::vector<ClientInfo>();
 }
 
 bool VPNServer::disconnectClient(int clientId) {
-    return clientManager->removeClient(clientId);
+    return clientManager ? clientManager->disconnectClient(clientId) : false;
 }
 
 std::vector<std::string> VPNServer::getAllAssignedVPNIPs() const {
-    return clientManager->getAllAssignedVPNIPs();
+    return clientManager ? clientManager->getAllAssignedVPNIPs() : std::vector<std::string>();
 }
 
 TUNInterface* VPNServer::getTUNInterface() const {
     return tunnelManager ? tunnelManager->getTUNInterface() : nullptr;
 }
 
-std::vector<std::string> VPNServer::getVPNStats() {
+// PacketHandler* VPNServer::getPacketHandler() const {
+//     return packetHandler;
+// }
+
+std::vector<std::string> VPNServer::getPacketStats() {
     std::vector<std::string> stats;
-    TUNInterface* tun = tunnelManager->getTUNInterface();
-    if (tun) {
-        stats.push_back("Interface: " + tun->getInterfaceName());
-        stats.push_back("IP: " + tun->getIP() + "/" + tun->getMask());
-        stats.push_back("Bytes Received: " + std::to_string(tun->getBytesReceived()));
-        stats.push_back("Bytes Sent: " + std::to_string(tun->getBytesSent()));
-        stats.push_back("Status: " + std::string(tun->isOpened() ? "OPEN" : "CLOSED"));
+    
+    if (packetHandler) {
+        PacketStats pStats = packetHandler->getPacketStats();
+        stats.push_back("Packet Processing Statistics:");
+        stats.push_back("============================");
+        stats.push_back("Total Packets Processed: " + std::to_string(pStats.totalPackets));
+        stats.push_back("Total Bytes Processed: " + std::to_string(pStats.totalBytes));
+        stats.push_back("");
+        stats.push_back("Traffic Distribution:");
+        stats.push_back("  To Clients: " + std::to_string(pStats.packetsToClients) + 
+                        " packets (" + std::to_string(pStats.bytesToClients) + " bytes)");
+        stats.push_back("  From Clients: " + std::to_string(pStats.packetsFromClients) + 
+                        " packets (" + std::to_string(pStats.bytesFromClients) + " bytes)");
+        stats.push_back("  To Internet: " + std::to_string(pStats.packetsToInternet) + 
+                        " packets (" + std::to_string(pStats.bytesToInternet) + " bytes)");
+        
+        // Calculate percentages if we have data
+        if (pStats.totalPackets > 0) {
+            stats.push_back("");
+            stats.push_back("Percentage Distribution:");
+            stats.push_back("  To Clients: " + 
+                          std::to_string((pStats.packetsToClients * 100) / pStats.totalPackets) + "%");
+            stats.push_back("  From Clients: " + 
+                          std::to_string((pStats.packetsFromClients * 100) / pStats.totalPackets) + "%");  
+            stats.push_back("  To Internet: " + 
+                          std::to_string((pStats.packetsToInternet * 100) / pStats.totalPackets) + "%");
+        }
+    } else {
+        stats.push_back("Packet handler not available");
     }
+    
     return stats;
 }
 
-ClientManager* VPNServer::getClientManager() const {
-    return clientManager;
-}
-
-PacketHandler* VPNServer::getPacketHandler() const {
-    return packetHandler;
+std::vector<std::string> VPNServer::getVPNStats() {
+    std::vector<std::string> stats;
+    stats.push_back("VPN Server Statistics:");
+    stats.push_back("======================");
+    stats.push_back("Server VPN IP: 10.8.0.1/24");
+    
+    if (clientManager) {
+        stats.push_back("Available IPs: " + std::to_string(clientManager->getAvailableIPs()));
+        
+        auto assignedIPs = clientManager->getAllAssignedVPNIPs();
+        stats.push_back("Assigned IPs: " + std::to_string(assignedIPs.size()));
+        
+        if (!assignedIPs.empty()) {
+            stats.push_back("Assigned IP List:");
+            for (const auto& ip : assignedIPs) {
+                stats.push_back("  - " + ip);
+            }
+        }
+        
+        stats.push_back("Connected Clients: " + std::to_string(clientManager->getClientCount()));
+    }
+    
+    if (tunnelManager) {
+        TUNInterface* tun = tunnelManager->getTUNInterface();
+        if (tun) {
+            stats.push_back("TUN Interface: " + tun->getName());
+            stats.push_back("TUN Bytes Received: " + std::to_string(tun->getBytesReceived()));
+            stats.push_back("TUN Bytes Sent: " + std::to_string(tun->getBytesSent()));
+        }
+    }
+    
+    return stats;
 }

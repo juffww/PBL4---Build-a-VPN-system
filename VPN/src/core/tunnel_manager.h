@@ -1,38 +1,46 @@
 #ifndef TUNNEL_MANAGER_H
 #define TUNNEL_MANAGER_H
 
-#include "network/tun_interface.h"
-#include "packet_handler.h"
 #include <string>
-#include <memory>
 #include <thread>
 #include <atomic>
+#include "../network/tun_interface.h"
 
-class ClientManager;
+// Forward declaration
+class PacketHandler;
 
 class TunnelManager {
-public:
-    TunnelManager(const std::string& interface, const std::string& ip, const std::string& mask);
-    ~TunnelManager();
-
-    bool initialize();
-    void start();
-    void stop();
-    bool setupNATRules();
-    bool clearNATRules();
-    bool executeCommand(const std::string& cmd);
-    void processTUN();
-    bool injectPacket(const char* packet, int size);
-    void setClientManager(ClientManager* clientManager);
-    TUNInterface* getTUNInterface() const;
-
 private:
     TUNInterface* tunInterface;
+    std::thread tunnelThread;
+    std::atomic<bool> tunnelThreadRunning;
     PacketHandler* packetHandler;
-    std::atomic<bool> running;
-    std::thread workerThread;
-
+    std::string interfaceName;
+    
+    void processPackets();
     void processIPPacket(const char* packet, int size);
+    void setupVPNRouting(const std::string& serverIP, const std::string& subnet);
+    void setupNATRules(const std::string& subnet);
+    void cleanupNATRules();
+
+public:
+    explicit TunnelManager(const std::string& interfaceName = "tun0");
+    ~TunnelManager();
+    
+    // Core functionality
+    bool initialize(const std::string& serverIP, const std::string& subnet, PacketHandler* handler);
+    void start();
+    void stop();
+    
+    // Packet injection
+    bool injectPacket(const char* packet, int size);
+    
+    // Getters
+    TUNInterface* getTUNInterface() const;
+    bool isRunning() const;
+    std::string getInterfaceName() const;
+    long long getBytesReceived() const;
+    long long getBytesSent() const;
 };
 
 #endif // TUNNEL_MANAGER_H

@@ -107,11 +107,6 @@ public:
     // Cleanup
     void cleanup();
     std::vector<std::string> getClientStats();
-
-    // Thêm vào class ClientManager
-    void disconnectAllClients();
-    SOCKET getClientSocket(int clientId) const;
-
 };
 
 #endif // CLIENT_MANAGER_H
