@@ -4,6 +4,7 @@
 #include <iostream>
 #include <cstring>
 #include <sstream>
+#include <string>
 #ifdef _WIN32
     #include <ws2tcpip.h>
 #else
@@ -35,15 +36,58 @@ void PacketHandler::handleTUNPacket(const char* packet, int size, const std::str
         return;
     }
     
-    // Kiểm tra xem đích có phải là VPN client không
-    if (isVPNClient(dstIP)) {
-        std::cout << "[PACKET] Forwarding to VPN client: " << dstIP << "\n";
-        forwardPacketToClient(packet, size, dstIP);
-    } else {
-        std::cout << "[PACKET] Packet from " << srcIP << " to Internet (" << dstIP << ")\n";
-        // Packet sẽ được xử lý bởi kernel routing và iptables NAT
-        logPacketInfo(packet, size, srcIP, dstIP, "TO_INTERNET");
+    // Bỏ qua multicast/broadcast noise
+    if (srcIP == "10.8.0.1" && (dstIP.substr(0, 4) == "224." || dstIP.substr(0, 4) == "239.")) {
+        return;
     }
+    
+    // === SERVER -> CLIENT ===
+    if (srcIP == "10.8.0.1" && isVPNClient(dstIP)) {
+        std::cout << "[PACKET] Server->Client: " << srcIP << " -> " << dstIP 
+                  << " (" << size << " bytes)\n";
+        forwardPacketToClient(packet, size, dstIP);
+        updatePacketStats("TO_CLIENT", size);
+        return;
+    }
+    
+    // === CLIENT -> SERVER ===
+    if (isVPNClient(srcIP) && dstIP == "10.8.0.1") {
+        std::cout << "[PACKET] Client->Server: " << srcIP << " -> " << dstIP 
+                  << " (" << size << " bytes)\n";
+        updatePacketStats("FROM_CLIENT", size);
+        // Kernel tự xử lý vì đích là local
+        return;
+    }
+    
+    // === CLIENT -> INTERNET ===
+    if (isVPNClient(srcIP) && !isVPNClient(dstIP) && dstIP != "10.8.0.1") {
+        std::cout << "[PACKET] Client->Internet: " << srcIP << " -> " << dstIP 
+                  << " (" << size << " bytes)\n";
+        updatePacketStats("TO_INTERNET", size);
+        logPacketInfo(packet, size, srcIP, dstIP, "TO_INTERNET");
+        // Packet sẽ được kernel forward và NAT
+        return;
+    }
+    
+    // === INTERNET -> CLIENT ===
+    if (!isVPNClient(srcIP) && srcIP != "10.8.0.1" && isVPNClient(dstIP)) {
+        std::cout << "[PACKET] Internet->Client: " << srcIP << " -> " << dstIP 
+                  << " (" << size << " bytes)\n";
+        forwardPacketToClient(packet, size, dstIP);
+        updatePacketStats("TO_CLIENT", size);
+        return;
+    }
+    
+    // === INTER-CLIENT ===
+    if (isVPNClient(srcIP) && isVPNClient(dstIP)) {
+        std::cout << "[PACKET] Inter-client: " << srcIP << " -> " << dstIP 
+                  << " (" << size << " bytes)\n";
+        forwardPacketToClient(packet, size, dstIP);
+        updatePacketStats("TO_CLIENT", size);
+        return;
+    }
+    
+    std::cout << "[PACKET] Unhandled: " << srcIP << " -> " << dstIP << "\n";
 }
 
 void PacketHandler::handleClientPacket(int clientId, const char* packet, int size) {
@@ -51,7 +95,9 @@ void PacketHandler::handleClientPacket(int clientId, const char* packet, int siz
         std::cout << "[PACKET] No tunnel manager available\n";
         return;
     }
-    
+    // *** BẬT CẬP NHẬT THỐNG KÊ ***
+    updatePacketStats("FROM_CLIENT", size);
+    //logPacketInfo(/*...*/); // Bạn có thể cần parse IP header ở đây để log cho chính xác
     // Parse packet để lấy thông tin
     //if (size >= 20) {
         struct iphdr {
@@ -99,25 +145,29 @@ void PacketHandler::forwardPacketToClient(const char* packet, int size, const st
         return;
     }
     
-    // Tìm client có VPN IP tương ứng
     int clientId = clientManager->findClientByVPNIP(destIP);
     if (clientId != -1) {
-        // Tạo packet message với binary data
-        std::string packetMsg = "PACKET";
-        packetMsg.append(packet, size);
-        packetMsg += "\n";
+        // --- BẮT ĐẦU THAY ĐỔI ---
+        // Sử dụng giao thức an toàn: PACKET_DATA|<size>\n<raw_data>
+        std::string header = "PACKET_DATA|" + std::to_string(size) + "\n";
         
-        if (clientManager->sendToClient(clientId, packetMsg)) {
-            std::cout << "[PACKET] Packet forwarded to client " << clientId 
-                      << " (VPN IP: " << destIP << ", Size: " << size << " bytes)\n";
-            
-            // Cập nhật thống kê
-            clientManager->updateClientStats(clientId, size, 0); // bytes sent to client
-            
-            logPacketInfo(packet, size, "SERVER", destIP, "TO_CLIENT");
+        // Gửi header trước
+        if (send(clientManager->getClientInfo(clientId)->socket, header.c_str(), header.length(), MSG_NOSIGNAL) > 0) {
+            // Gửi dữ liệu thô sau
+            if (send(clientManager->getClientInfo(clientId)->socket, packet, size, MSG_NOSIGNAL) > 0) {
+                std::cout << "[PACKET] Packet forwarded to client " << clientId 
+                          << " (VPN IP: " << destIP << ", Size: " << size << " bytes)\n";
+                
+                // Cập nhật thống kê
+                clientManager->updateClientStats(clientId, size, 0); // bytes sent to client
+                updatePacketStats("TO_CLIENT", size); // *** BẬT CẬP NHẬT THỐNG KÊ ***
+            } else {
+                 std::cout << "[ERROR] Failed to send packet data to client " << clientId << "\n";
+            }
         } else {
-            std::cout << "[ERROR] Failed to forward packet to client " << clientId << "\n";
+            std::cout << "[ERROR] Failed to send packet header to client " << clientId << "\n";
         }
+        // --- KẾT THÚC THAY ĐỔI ---
     } else {
         std::cout << "[WARN] No client found for VPN IP: " << destIP << "\n";
     }

@@ -78,29 +78,31 @@ void TunnelManager::setupNATRules(const std::string& subnet) {
     }
     
     std::cout << "[TUNNEL] Setting up NAT for interface: " << defaultInterface << "\n";
+    std::string subnetWithMask = subnet + ".0/24";
     
-    // Enable IP forwarding
     tunInterface->executeCommand("echo 1 > /proc/sys/net/ipv4/ip_forward");
     
-    // Clear existing rules for VPN subnet
-    std::string subnetWithMask = subnet + ".0/24";
+    std::cout << "[TUNNEL] Cleaning up old rules...\n";
     tunInterface->executeCommand("iptables -t nat -D POSTROUTING -s " + subnetWithMask + " -o " + defaultInterface + " -j MASQUERADE 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -s " + subnetWithMask + " -j ACCEPT 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -d " + subnetWithMask + " -j ACCEPT 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -i " + interfaceName + " -j ACCEPT 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -o " + interfaceName + " -j ACCEPT 2>/dev/null || true");
     
-    // Add new rules
+    std::cout << "[TUNNEL] Adding NAT MASQUERADE rule...\n";
     tunInterface->executeCommand("iptables -t nat -A POSTROUTING -s " + subnetWithMask + " -o " + defaultInterface + " -j MASQUERADE");
+    
+    std::cout << "[TUNNEL] Adding FORWARD rules...\n";
+    tunInterface->executeCommand("iptables -I FORWARD 1 -m state --state RELATED,ESTABLISHED -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -s " + subnetWithMask + " -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -d " + subnetWithMask + " -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -i " + interfaceName + " -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -o " + interfaceName + " -j ACCEPT");
     
-    // Allow established and related connections
-    tunInterface->executeCommand("iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT");
-    
     std::cout << "[TUNNEL] NAT configuration completed\n";
+    
+    tunInterface->executeCommand("iptables -t nat -L POSTROUTING -n -v | grep MASQUERADE");
+    tunInterface->executeCommand("iptables -L FORWARD -n -v | head -20");
 }
 
 void TunnelManager::start() {

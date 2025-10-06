@@ -73,7 +73,7 @@ else
 fi
 
 # Kiểm tra server listening
-if netstat -ln | grep -q ":1194"; then
+if ss -tuln | grep -q ":1194"; then
     echo "✓ Server listening on port 1194"
 else
     echo "✗ Server not listening"

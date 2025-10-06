@@ -127,7 +127,7 @@ public:
             return;
         }
         
-        std::cout << "\n=== VPN SERVER STATUS ===\n";
+        std::cout << "\n=== VPN SERVER STATUS skjdf ===\n";
         std::cout << "Trạng thái: " << (running ? "RUNNING" : "STOPPED") << "\n";
         std::cout << "Cổng: " << server->getPort() << "\n";
         std::cout << "Clients kết nối: " << server->getClientCount() << "\n";
@@ -136,7 +136,7 @@ public:
     }
     
     void printHelp() {
-        std::cout << "\n=== VPN SERVER COMMANDS ===\n";
+        std::cout << "\n=== VPN SERVER COMMANDS ffffff===\n";
         std::cout << "start [port]  - Khởi động server (mặc định port 1194)\n";
         std::cout << "stop          - Dừng server\n";
         std::cout << "status        - Hiển thị trạng thái server\n";
@@ -146,6 +146,7 @@ public:
         std::cout << "packetstats   - Thống kê packet processing\n";
         std::cout << "kick <id>     - Ngắt kết nối client theo ID\n";
         std::cout << "broadcast <msg> - Gửi tin nhắn đến tất cả clients\n";
+        std::cout << "testnat       -   \n";
         std::cout << "help          - Hiển thị trợ giúp\n";
         std::cout << "clear         - Xóa màn hình\n";
         std::cout << "quit/exit     - Thoát chương trình\n";
@@ -389,6 +390,27 @@ int main() {
                 }
                 else if (cmd == "quit" || cmd == "exit") {
                     g_running = false;
+                }
+                else if (command == "testnat") {
+                    std::cout << "\n=== TESTING NAT FUNCTIONALITY ===\n";
+                    
+                    // Test từ server ra Internet
+                    std::cout << "1. Testing from server to Internet:\n";
+                    system("ping -c 2 8.8.8.8");
+                    
+                    // Test routing
+                    std::cout << "\n2. Routing table:\n";
+                    system("ip route show | grep -E 'default|10.8.0'");
+                    
+                    // Test NAT rule
+                    std::cout << "\n3. NAT MASQUERADE rule:\n";
+                    system("iptables -t nat -L POSTROUTING -n -v | grep MASQUERADE");
+                    
+                    // Test IP forwarding
+                    std::cout << "\n4. IP Forwarding status:\n";
+                    system("cat /proc/sys/net/ipv4/ip_forward");
+                    
+                    std::cout << "============================\n";
                 }
                 else {
                     std::cout << "[ERROR] Lệnh không hợp lệ: '" << cmd << "'\n";

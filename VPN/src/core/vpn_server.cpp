@@ -147,58 +147,76 @@ void VPNServer::acceptConnections() {
 void VPNServer::handleClient(int clientId) {
     ClientInfo* client = clientManager->getClientInfo(clientId);
     if (!client) return;
-    
+
     char buffer[4096];
     std::string welcomeMsg = "WELCOME|VPN Server 2.0.0|Ready for authentication\n";
     clientManager->sendToClient(clientId, welcomeMsg);
-    
-    std::string messageBuffer; // Buffer for incomplete messages
-    
+
+    // --- BẮT ĐẦU THAY ĐỔI ---
+    std::string messageBuffer; // Buffer cho cả control messages và packet data
+    bool expectingPacketData = false;
+    int packetSizeToRead = 0;
+    // --- KẾT THÚC THAY ĐỔI ---
+
     while (!shouldStop && client->socket != INVALID_SOCKET) {
-        int bytesReceived = recv(client->socket, buffer, sizeof(buffer) - 1, 0);
+        int bytesReceived = recv(client->socket, buffer, sizeof(buffer), 0);
         if (bytesReceived <= 0) {
             std::cout << "[INFO] Client " << clientId << " disconnected (recv=" << bytesReceived << ")\n";
             break;
         }
-        
-        // Add received data to buffer
+
         messageBuffer.append(buffer, bytesReceived);
-        
-        // Process complete messages
-        size_t pos = 0;
-        while ((pos = messageBuffer.find('\n')) != std::string::npos) {
-            std::string message = messageBuffer.substr(0, pos);
-            messageBuffer.erase(0, pos + 1);
-            
-            // Process message
-            if (!processClientMessage(clientId, message)) {
-                break;
+
+        // Vòng lặp xử lý dữ liệu trong buffer
+        bool processedData = true;
+        while(processedData) {
+            processedData = false;
+            if (expectingPacketData) {
+                if (messageBuffer.length() >= packetSizeToRead) {
+                    // Đã nhận đủ dữ liệu packet
+                    std::cout << "[CLIENT->TUN] Received " << packetSizeToRead << " bytes from client " << clientId << "\n";
+                    clientManager->handleClientPacket(clientId, messageBuffer.data(), packetSizeToRead);
+
+                    // Xóa dữ liệu đã xử lý khỏi buffer và reset state
+                    messageBuffer.erase(0, packetSizeToRead);
+                    expectingPacketData = false;
+                    packetSizeToRead = 0;
+                    processedData = true; // Tiếp tục xử lý phần còn lại của buffer
+                }
+            } else {
+                // Đang tìm control message (kết thúc bằng '\n')
+                size_t pos = messageBuffer.find('\n');
+                if (pos != std::string::npos) {
+                    std::string message = messageBuffer.substr(0, pos);
+                    messageBuffer.erase(0, pos + 1);
+
+                    // Xử lý control message
+                    if (message.rfind("PACKET_DATA|", 0) == 0) {
+                        if (clientManager->isClientAuthenticated(clientId)) {
+                            try {
+                                packetSizeToRead = std::stoi(message.substr(12));
+                                if (packetSizeToRead > 0 && packetSizeToRead < 4096) {
+                                    expectingPacketData = true;
+                                }
+                            } catch (const std::exception&) { /* ignore */ }
+                        }
+                    } else {
+                        if (!processClientMessage(clientId, message)) {
+                            // Lệnh yêu cầu ngắt kết nối
+                            goto end_loop;
+                        }
+                    }
+                    processedData = true; // Tiếp tục xử lý phần còn lại của buffer
+                }
             }
         }
     }
-    
+
+end_loop:
     std::cout << "[INFO] Client " << clientId << " disconnected\n";
     clientManager->removeClient(clientId);
 }
-
 bool VPNServer::processClientMessage(int clientId, const std::string& message) {
-    // Check if this is a packet message
-    if (message.substr(0, 6) == "PACKET") {
-        if (clientManager->isClientAuthenticated(clientId) && message.length() > 6) {
-            const char* packetData = message.c_str() + 6;
-            int packetSize = message.length() - 6;
-            
-            std::cout << "[CLIENT->TUN] Received " << packetSize << " bytes from client " << clientId << "\n";
-            
-            // Handle packet through client manager
-            clientManager->handleClientPacket(clientId, packetData, packetSize);
-        } else {
-            std::cout << "[WARN] Received packet from unauthenticated client " << clientId << "\n";
-        }
-        return true;
-    }
-    
-    // Handle regular text commands
     std::istringstream iss(message);
     std::string command;
     iss >> command;
