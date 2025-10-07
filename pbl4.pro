@@ -19,11 +19,13 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
-    vpn_client.cpp
+    vpn_client.cpp  \
+    tun_interface_mac.cpp
 
 HEADERS += \
     mainwindow.h \
-    vpn_client.h
+    vpn_client.h \
+    tun_interface.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

@@ -203,6 +203,8 @@ void VPNClient::onDisconnected()
 
 void VPNClient::onReadyRead()
 {
+    qDebug() << "[DEBUG] Socket has" << socket->bytesAvailable() << "bytes available";
+
     while (socket->bytesAvailable() > 0) {
         if (isReadingPacketData) {
             // Đang đọc packet data
@@ -210,8 +212,12 @@ void VPNClient::onReadyRead()
             QByteArray chunk = socket->read(remainingBytes);
             pendingPacketData.append(chunk);
 
+            qDebug() << "[DEBUG] Read" << chunk.size() << "bytes packet data, total:"
+                     << pendingPacketData.size() << "/" << pendingPacketSize;
+
             if (pendingPacketData.size() >= pendingPacketSize) {
-                // Đã đọc đủ packet data
+                // Đã nhận đủ packet data
+                qDebug() << "[CLIENT->TUN] Writing" << pendingPacketSize << "bytes to TUN";
                 writePacketToTUN(pendingPacketData);
 
                 // Reset state
@@ -223,6 +229,7 @@ void VPNClient::onReadyRead()
             // Đọc control messages
             if (socket->canReadLine()) {
                 QString message = socket->readLine().trimmed();
+                qDebug() << "[DEBUG] Received control message:" << message;
                 parseServerMessage(message);
                 emit messageReceived(message);
             } else {

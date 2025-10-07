@@ -1,4 +1,5 @@
 #include "tun_interface.h"
+#include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -11,6 +12,8 @@
 //#include <iostream>
 #include <sstream>
 #include <cstdlib>
+#include <fstream>
+
 
 // Một số SDK/macOS không định nghĩa SYSPROTO_CONTROL → tự define
 #ifndef SYSPROTO_CONTROL
@@ -87,34 +90,43 @@ bool TUNInterface::configure(const std::string& ip, const std::string& mask,
 bool TUNInterface::configureClientMode() {
     if (!isOpen.load()) return false;
 
-    // Cấu hình IP + peer
+    // 1. Cấu hình IP với peer point-to-point
     std::ostringstream cmd;
-    if (!serverIP.empty()) {
-        cmd << "ifconfig " << interfaceName << " " << vpnIP << " " << serverIP
-            << " netmask 255.255.255.0 up";
-    } else {
-        cmd << "ifconfig " << interfaceName << " " << vpnIP
-            << " " << vpnIP << " netmask 255.255.255.0 up";
-    }
+    cmd << "ifconfig " << interfaceName << " " << vpnIP
+        << " 10.8.0.1 netmask 255.255.255.0 up";
     if (!executeCommand(cmd.str())) return false;
 
-    // *** THÊM ROUTE CHO CLIENT IP CỤ THỂ ***
-    std::ostringstream clientRouteCmd;
-    clientRouteCmd << "route add -host " << vpnIP << " -interface " << interfaceName;
-    executeCommand(clientRouteCmd.str());
-
-    // *** THÊM ROUTE CHO VPN SUBNET ***
+    // 2. Thêm route cho toàn bộ subnet VPN
     std::ostringstream subnetRouteCmd;
     subnetRouteCmd << "route add -net 10.8.0.0/24 -interface " << interfaceName;
     executeCommand(subnetRouteCmd.str());
 
-    // Route giữ kết nối tới server qua interface mặc định
+    // 3. **QUAN TRỌNG**: Thêm default route qua VPN
+    // Điều này khiến tất cả traffic đi qua VPN
+    std::ostringstream defaultRouteCmd;
+    defaultRouteCmd << "route add default -interface " << interfaceName;
+    executeCommand(defaultRouteCmd.str());
+
+    // 4. Lưu gateway cũ và thêm route cho server IP
     if (!serverIP.empty()) {
-        std::ostringstream serverRouteCmd;
-        serverRouteCmd << "route add -host " << serverIP << " -interface " << getDefaultInterface();
-        executeCommand(serverRouteCmd.str());
+        std::string oldGateway = getDefaultGateway();
+        if (!oldGateway.empty()) {
+            // Lưu gateway để restore sau
+            std::ostringstream saveCmd;
+            saveCmd << "echo " << oldGateway << " > /tmp/vpn_old_gateway";
+            executeCommand(saveCmd.str());
+
+            // Route cho server qua gateway cũ (để duy trì kết nối VPN)
+            std::ostringstream serverRouteCmd;
+            serverRouteCmd << "route add -host " << serverIP << " " << oldGateway;
+            executeCommand(serverRouteCmd.str());
+        }
     }
 
+    // 5. Cấu hình DNS (optional - giúp resolve domain names)
+    executeCommand("networksetup -setdnsservers Wi-Fi 8.8.8.8 8.8.4.4");
+
+    std::cout << "[INFO] Client mode configured with default route via VPN\n";
     return true;
 }
 
@@ -133,10 +145,74 @@ bool TUNInterface::setRoutes() {
     return executeCommand(cmd.str());
 }
 
+// std::string TUNInterface::getDefaultGateway() {
+//     // macOS: có thể đọc từ "route -n get default"
+//     // Ở đây tạm stub để tránh lỗi linker
+//     return "";
+// }
+
+
+// bool TUNInterface::configureClientMode() {
+//     if (!isOpen.load()) return false;
+
+//     // 1. Cấu hình IP với peer point-to-point
+//     std::ostringstream cmd;
+//     cmd << "ifconfig " << interfaceName << " " << vpnIP
+//         << " 10.8.0.1 netmask 255.255.255.0 up";
+//     if (!executeCommand(cmd.str())) return false;
+
+//     // 2. Lưu default gateway cũ TRƯỚC KHI thay đổi
+//     std::string oldGateway = getDefaultGateway();
+//     if (!oldGateway.empty()) {
+//         std::ostringstream saveCmd;
+//         saveCmd << "echo " << oldGateway << " > /tmp/vpn_old_gateway";
+//         executeCommand(saveCmd.str());
+
+//         std::cout << "[INFO] Saved old gateway: " << oldGateway << "\n";
+//     }
+
+//     // 3. Thêm route cho server IP qua gateway cũ (để duy trì kết nối VPN)
+//     if (!serverIP.empty() && !oldGateway.empty()) {
+//         std::ostringstream serverRouteCmd;
+//         serverRouteCmd << "route add -host " << serverIP << " " << oldGateway;
+//         executeCommand(serverRouteCmd.str());
+//         std::cout << "[INFO] Added route for VPN server via old gateway\n";
+//     }
+
+//     // 4. Thêm route cho subnet VPN
+//     std::ostringstream subnetRouteCmd;
+//     subnetRouteCmd << "route add -net 10.8.0.0/24 -interface " << interfaceName;
+//     executeCommand(subnetRouteCmd.str());
+
+//     // 5. *QUAN TRỌNG*: Thay đổi default route qua VPN gateway (10.8.0.1)
+//     // Xóa default route cũ
+//     executeCommand("route delete default");
+
+//     // Thêm default route mới qua VPN gateway
+//     std::ostringstream newDefaultRoute;
+//     newDefaultRoute << "route add default 10.8.0.1";
+//     if (!executeCommand(newDefaultRoute.str())) {
+//         std::cout << "[ERROR] Failed to add default route via VPN\n";
+//         return false;
+//     }
+
+//     std::cout << "[INFO] Client routing configured - all traffic via VPN (10.8.0.1)\n";
+//     return true;
+// }
+
 std::string TUNInterface::getDefaultGateway() {
-    // macOS: có thể đọc từ "route -n get default"
-    // Ở đây tạm stub để tránh lỗi linker
-    return "";
+    std::string gateway;
+    FILE* pipe = popen("route -n get default 2>/dev/null | grep gateway | awk '{print $2}'", "r");
+    if (pipe) {
+        char buffer[128];
+        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            gateway = buffer;
+            // Xóa newline
+            gateway.erase(gateway.find_last_not_of(" \n\r\t") + 1);
+        }
+        pclose(pipe);
+    }
+    return gateway;
 }
 
 std::string TUNInterface::getDefaultInterface() {
@@ -150,22 +226,79 @@ bool TUNInterface::executeCommand(const std::string& cmd) {
     return (ret == 0);
 }
 
+// Thay thế hàm readPacket hiện tại bằng hàm này
 int TUNInterface::readPacket(char* buffer, int maxSize) {
-    if (!isOpen.load()) return -1;
-    int n = ::read(tunFd, buffer, maxSize);
-    if (n > 0) bytesReceived += n;
-    return n;
+    if (!isOpen.load() || tunFd < 0) return -1;
+
+    // --- BẮT ĐẦU THAY ĐỔI ---
+    // Buffer tạm để đọc cả 4 byte header của macOS
+    char readBuffer[maxSize + 4];
+    int n = ::read(tunFd, readBuffer, sizeof(readBuffer));
+
+    if (n > 4) {
+        // Bỏ qua 4 byte header, chỉ sao chép gói tin IP thực sự
+        memcpy(buffer, readBuffer + 4, n - 4);
+        bytesReceived += (n - 4);
+        return n - 4; // Trả về kích thước của gói tin IP
+    }
+
+    // Nếu đọc lỗi hoặc không có dữ liệu
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        // Log lỗi nếu cần
+    }
+    return 0;
+    // --- KẾT THÚC THAY ĐỔI ---
 }
 
 int TUNInterface::writePacket(const char* buffer, int size) {
-    if (!isOpen.load()) return -1;
-    int n = ::write(tunFd, buffer, size);
-    if (n > 0) bytesSent += n;
-    return n;
+    if (!isOpen.load() || tunFd < 0) return -1;
+    if (size <= 0) return 0;
+
+    // --- BẮT ĐẦU THAY ĐỔI ---
+    char packetWithHeader[size + 4];
+
+    // Tạo header AF_INET (IPv4) cho macOS
+    uint32_t header = htonl(AF_INET);
+    memcpy(packetWithHeader, &header, 4);
+
+    // Gắn gói tin IP vào sau header
+    memcpy(packetWithHeader + 4, buffer, size);
+
+    // Ghi toàn bộ (header + packet) vào utun
+    int n = ::write(tunFd, packetWithHeader, size + 4);
+
+    if (n > 4) {
+        bytesSent += (n - 4);
+        return n - 4; // Trả về kích thước của gói tin IP đã gửi
+    }
+
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        // Log lỗi nếu cần
+    }
+    return 0;
+    // --- KẾT THÚC THAY ĐỔI ---
 }
 
 void TUNInterface::close() {
     if (isOpen.load() && tunFd >= 0) {
+        // Restore default gateway
+        std::string oldGateway;
+        std::ifstream gw("/tmp/vpn_old_gateway");
+        if (gw.is_open()) {
+            std::getline(gw, oldGateway);
+            gw.close();
+            if (!oldGateway.empty()) {
+                std::ostringstream restoreCmd;
+                restoreCmd << "route add default " << oldGateway;
+                executeCommand(restoreCmd.str());
+            }
+            executeCommand("rm /tmp/vpn_old_gateway");
+        }
+
+        // Remove VPN routes
+        executeCommand("route delete -net 10.8.0.0/24 2>/dev/null");
+        executeCommand("route delete default -interface " + interfaceName + " 2>/dev/null");
+
         ::close(tunFd);
         tunFd = -1;
         isOpen.store(false);

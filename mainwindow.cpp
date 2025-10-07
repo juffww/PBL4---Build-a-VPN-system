@@ -476,7 +476,7 @@ void MainWindow::setupUI()
     QGridLayout *settingsLayout = new QGridLayout(settingsGroup);
 
     settingsLayout->addWidget(new QLabel("Máy chủ:"), 0, 0);
-    serverEdit = new QLineEdit("192.168.1.100:1194");
+    serverEdit = new QLineEdit("44.193.84.13:1194");
     serverEdit->setReadOnly(true);
     serverEdit->setStyleSheet("QLineEdit { background-color: #f0f0f0; }");
     settingsLayout->addWidget(serverEdit, 0, 1);
