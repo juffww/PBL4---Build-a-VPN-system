@@ -37,6 +37,7 @@ add_executable(vpn_server
     src/core/tunnel_manager.cpp
     src/network/tun_interface.cpp
     src/network/socket_manager.cpp
+    src/core/config_manager.cpp 
 )
 
 
