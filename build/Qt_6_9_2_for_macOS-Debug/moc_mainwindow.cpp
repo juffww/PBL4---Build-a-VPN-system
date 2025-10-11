@@ -56,7 +56,8 @@ template <> constexpr inline auto MainWindow::qt_create_metaobjectdata<qt_meta_t
         "QString&",
         "host",
         "int&",
-        "port"
+        "port",
+        "onRegionChanged"
     };
 
     QtMocHelpers::UintData qt_methods {
@@ -82,6 +83,8 @@ template <> constexpr inline auto MainWindow::qt_create_metaobjectdata<qt_meta_t
         QtMocHelpers::SlotData<bool(const QString &, QString &, int &)>(11, 2, QMC::AccessPrivate, QMetaType::Bool, {{
             { QMetaType::QString, 12 }, { 0x80000000 | 13, 14 }, { 0x80000000 | 15, 16 },
         }}),
+        // Slot 'onRegionChanged'
+        QtMocHelpers::SlotData<void()>(17, 2, QMC::AccessPrivate, QMetaType::Void),
     };
     QtMocHelpers::UintData qt_properties {
     };
@@ -116,6 +119,7 @@ void MainWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         case 8: _t->onPublicIPReceived(); break;
         case 9: { bool _r = _t->parseServerAddress((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString&>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<int&>>(_a[3])));
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
+        case 10: _t->onRegionChanged(); break;
         default: ;
         }
     }
@@ -140,14 +144,14 @@ int MainWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 10)
+        if (_id < 11)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 10;
+        _id -= 11;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 10)
+        if (_id < 11)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 10;
+        _id -= 11;
     }
     return _id;
 }

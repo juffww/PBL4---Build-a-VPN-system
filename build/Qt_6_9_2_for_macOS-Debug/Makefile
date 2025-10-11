@@ -63,7 +63,8 @@ OBJECTS       = main.o \
 		tun_interface_mac.o \
 		moc_mainwindow.o \
 		moc_vpn_client.o
-DIST          = /Qt/6.9.2/macos/mkspecs/features/spec_pre.prf \
+DIST          = ../../vpn_config.ini \
+		/Qt/6.9.2/macos/mkspecs/features/spec_pre.prf \
 		/Qt/6.9.2/macos/mkspecs/features/device_config.prf \
 		/Qt/6.9.2/macos/mkspecs/common/unix.conf \
 		/Qt/6.9.2/macos/mkspecs/common/mac.conf \
@@ -281,6 +282,7 @@ DIST          = /Qt/6.9.2/macos/mkspecs/features/spec_pre.prf \
 		/Qt/6.9.2/macos/mkspecs/features/qt_config.prf \
 		/Qt/6.9.2/macos/mkspecs/macx-clang/qmake.conf \
 		/Qt/6.9.2/macos/mkspecs/features/spec_post.prf \
+		../../.qmake.stash \
 		/Qt/6.9.2/macos/mkspecs/features/exclusive_builds.prf \
 		/Qt/6.9.2/macos/mkspecs/features/mac/sdk.prf \
 		/Qt/6.9.2/macos/mkspecs/features/toolchain.prf \
@@ -324,7 +326,7 @@ TARGET        = VPNClient.app/Contents/MacOS/VPNClient
 EXPORT_QMAKE_MAC_SDK = macosx
 EXPORT_QMAKE_MAC_SDK_VERSION = 15.0
 EXPORT_QMAKE_XCODE_DEVELOPER_PATH = /Applications/Xcode.app/Contents/Developer
-EXPORT__QMAKE_STASH_ = 
+EXPORT__QMAKE_STASH_ = /Users/vohoangminh/client/build/Qt_6_9_2_for_macOS-Debug/.qmake.stash
 EXPORT_VALID_ARCHS = x86_64 arm64
 EXPORT_DEFAULT_ARCHS = arm64
 EXPORT_ARCHS = $(filter $(EXPORT_VALID_ARCHS), $(if $(ARCHS), $(ARCHS), $(if $(EXPORT_DEFAULT_ARCHS), $(EXPORT_DEFAULT_ARCHS), $(EXPORT_VALID_ARCHS))))
@@ -558,6 +560,7 @@ Makefile: ../../pbl4.pro ../../../Qt/6.9.2/macos/mkspecs/features/spec_pre.prf \
 		../../../Qt/6.9.2/macos/mkspecs/features/qt_config.prf \
 		../../../Qt/6.9.2/macos/mkspecs/macx-clang/qmake.conf \
 		../../../Qt/6.9.2/macos/mkspecs/features/spec_post.prf \
+		.qmake.stash \
 		../../../Qt/6.9.2/macos/mkspecs/features/exclusive_builds.prf \
 		../../../Qt/6.9.2/macos/mkspecs/features/mac/sdk.prf \
 		../../../Qt/6.9.2/macos/mkspecs/features/toolchain.prf \
@@ -811,6 +814,7 @@ Makefile: ../../pbl4.pro ../../../Qt/6.9.2/macos/mkspecs/features/spec_pre.prf \
 ../../../Qt/6.9.2/macos/mkspecs/features/qt_config.prf:
 ../../../Qt/6.9.2/macos/mkspecs/macx-clang/qmake.conf:
 ../../../Qt/6.9.2/macos/mkspecs/features/spec_post.prf:
+.qmake.stash:
 ../../../Qt/6.9.2/macos/mkspecs/features/exclusive_builds.prf:
 ../../../Qt/6.9.2/macos/mkspecs/features/mac/sdk.prf:
 ../../../Qt/6.9.2/macos/mkspecs/features/toolchain.prf:
@@ -880,6 +884,7 @@ clean: compiler_clean
 
 distclean: clean 
 	-$(DEL_FILE) -r VPNClient.app
+	-$(DEL_FILE) .qmake.stash
 	-$(DEL_FILE) Makefile
 
 

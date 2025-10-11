@@ -16,6 +16,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
+class QRadioButton;
 class VPNClient;
 class MainWindow : public QMainWindow
 {
@@ -36,6 +37,7 @@ private slots:
     void checkCurrentIP();
     void onPublicIPReceived();
     bool parseServerAddress(const QString& serverInput, QString& host, int& port);
+    void onRegionChanged();
 private:
     void setupUI();
     void setupSystemTray();
@@ -65,6 +67,11 @@ private:
     QPushButton *connectButton;
     QTextEdit *logTextEdit;
     QProgressBar *progressBar;
+
+    QGroupBox *regionGroup; //thêm radio button
+    QRadioButton *usRadioButton;
+    QRadioButton *sgRadioButton;
+    QRadioButton *ukRadioButton;
 
     QSystemTrayIcon *systemTrayIcon;
     QTimer *statsTimer;
