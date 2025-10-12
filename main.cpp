@@ -1,11 +1,16 @@
-#include "mainwindow.h"
-
 #include <QApplication>
+#include "mainwindow.h"
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    MainWindow w;
-    w.show();
-    return a.exec();
+    QApplication app(argc, argv);
+
+    app.setApplicationName("VPN Client");
+    app.setApplicationVersion("1.0");
+    app.setOrganizationName("VPN Solutions");
+
+    MainWindow window;
+    window.show();
+
+    return app.exec();
 }
