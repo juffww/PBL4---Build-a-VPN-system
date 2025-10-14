@@ -179,7 +179,7 @@ void MainWindow::connectToVPN()
     } else if (sgRadioButton->isChecked()) {
         serverKey = "servers/sg_server_ip";
     } else if (ukRadioButton->isChecked()) {
-        serverKey="server/uk_server_ip";
+        serverKey="servers/uk_server_ip";
     } else {
         // Quy tắc: Phải chọn vùng trước khi kết nối
         QMessageBox::warning(this, "Chưa chọn vùng", "Vui lòng chọn một vùng máy chủ (Mỹ hoặc Singapore) trước khi kết nối.");
