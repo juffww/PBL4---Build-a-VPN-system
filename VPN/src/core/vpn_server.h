@@ -7,8 +7,12 @@
 #include <atomic>
 #include <chrono>
 #include <sstream>
+#include <map>
+#include <mutex>
+
 #ifdef _WIN32
     #include <winsock2.h>
+    #include <ws2tcpip.h>
     typedef SOCKET SOCKET;
     #define INVALID_SOCKET INVALID_SOCKET
     #define SOCKET_ERROR SOCKET_ERROR
@@ -17,16 +21,30 @@
     #define INVALID_SOCKET -1
     #define SOCKET_ERROR -1
     #include <ifaddrs.h>
+    #include <sys/socket.h>
+    #include <netinet/in.h>
 #endif
 
-// Include component headers
 #include "client_manager.h"
 #include "tunnel_manager.h"
 #include "packet_handler.h"
 #include "../network/tun_interface.h"
 
+class TunnelManager;
+class PacketHandler;
+class TUNInterface;
+struct sockaddr_in;
+
 class VPNServer {
 private:
+    // UDP support
+    SOCKET udpSocket;
+    std::thread udpThread;
+    std::map<int, struct sockaddr_in> clientUDPAddrs;
+    std::mutex udpAddrMutex;
+    
+    void handleUDPPackets();
+    
     // Server configuration
     int serverPort;
     SOCKET serverSocket;
@@ -78,14 +96,16 @@ public:
     
     // Network interface access
     TUNInterface* getTUNInterface() const;
+    ClientManager* getClientManager() const { return clientManager; }
+    PacketHandler* getPacketHandler() const { return packetHandler; }
+    
+    // UDP access for PacketHandler
+    SOCKET getUDPSocket() const { return udpSocket; }
+    bool getClientUDPAddr(int clientId, struct sockaddr_in& addr);
     
     // Statistics
     std::vector<std::string> getVPNStats();
-
-    ClientManager* getClientManager() const { return clientManager; }
-    PacketHandler* getPacketHandler() const { return packetHandler; }
     std::vector<std::string> getPacketStats();
-
 };
 
-#endif // VPN_SERVER_H
+#endif

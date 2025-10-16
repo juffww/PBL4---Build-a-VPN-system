@@ -1,0 +1,27 @@
+=====================================
+    VPN SERVER CONTROL PANEL        
+=====================================
+Phiên bản: 2.0.0
+Giao thức: Custom VPN Protocol
+Hỗ trợ: Linux x64, TUN/TAP
+Build: Oct 16 2025 10:31:01
+
+
+=== VPN SERVER COMMANDS ffffff===
+start [port]  - Khởi động server (mặc định port 1194)
+stop          - Dừng server
+status        - Hiển thị trạng thái server
+clients       - Liệt kê clients đang kết nối (với VPN IP)
+vpnstats      - Thống kê VPN và IP pool
+tunstats      - Thống kê interface TUN
+packetstats   - Thống kê packet processing
+kick <id>     - Ngắt kết nối client theo ID
+broadcast <msg> - Gửi tin nhắn đến tất cả clients
+testnat       -   
+help          - Hiển thị trợ giúp
+clear         - Xóa màn hình
+quit/exit     - Thoát chương trình
+============================
+
+vpn-server> [INFO] Đang dọn dẹp...
+[INFO] Chương trình đã thoát an toàn.

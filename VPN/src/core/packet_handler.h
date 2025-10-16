@@ -4,11 +4,10 @@
 #include <string>
 #include <cstdint>
 
-// Forward declarations
 class TunnelManager;
 class ClientManager;
+class VPNServer; 
 
-// Packet statistics structure
 struct PacketStats {
     long long totalPackets = 0;
     long long totalBytes = 0;
@@ -24,9 +23,9 @@ class PacketHandler {
 private:
     TunnelManager* tunnelManager;
     ClientManager* clientManager;
+    VPNServer* vpnServer; 
     PacketStats packetStats;
     
-    // Helper methods
     bool isVPNClient(const std::string& ip);
     void logPacketInfo(const char* packet, int size, const std::string& srcIP, 
                       const std::string& dstIP, const std::string& direction);
@@ -40,30 +39,16 @@ public:
     PacketHandler();
     ~PacketHandler();
     
-    // Setup methods
     void setTunnelManager(TunnelManager* manager);
     void addClientManager(ClientManager* manager);
+    void setVPNServer(VPNServer* server); // *** THÊM ***
     
-    // Packet handling methods
     void handleTUNPacket(const char* packet, int size, const std::string& srcIP, const std::string& dstIP);
     void handleClientPacket(int clientId, const char* packet, int size);
     void forwardPacketToClient(const char* packet, int size, const std::string& destIP);
     
-    // Statistics
     PacketStats getPacketStats() const;
     void resetPacketStats();
-
-    void debugRawPacket(const char* packet, int size);
-    bool validateIPPacket(const char* packet, int size);
-    std::string extractSourceIP(const char* packet);
-    void handleValidatedPacket(const char* packet, int size,
-                               const std::string& srcIP,
-                               const std::string& dstIP);
-    bool parsePacketIPs(const char* packet, std::string& srcIP, std::string& dstIP);
-    void logProtocolDetails(const char* packet, int size);
-    void logTCPDetails(const char* tcpHeader, int size);
-    void logUDPDetails(const char* udpHeader, int size);
-    void logICMPDetails(const char* icmpHeader, int size);
 };
 
-#endif // PACKET_HANDLER_H
+#endif
