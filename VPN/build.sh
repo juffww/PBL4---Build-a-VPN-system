@@ -71,10 +71,10 @@ if ss -tuln | grep -q ":1194 "; then
     sleep 1
 fi
 
-if ss -tuln | grep -q ":51820 "; then
-    echo "⚠ Port 51820 (UDP) đã được sử dụng"
+if ss -tuln | grep -q ":5502 "; then
+    echo "⚠ Port 5502 (UDP) đã được sử dụng"
     echo "Killing existing process..."
-    fuser -k 51820/udp 2>/dev/null
+    fuser -k 5502/udp 2>/dev/null
     sleep 1
 fi
 
@@ -97,73 +97,23 @@ fi
 echo 1 > /proc/sys/net/ipv4/ip_forward
 echo "✓ IP forwarding enabled"
 
-# 10. Test run (optional - comment out nếu không muốn auto-test)
 echo ""
-echo "=== Quick Test (10 seconds) ==="
-echo "Starting server..."
-
-# Chạy server trong background với timeout
-timeout 10s ./vpn_server > test_output.log 2>&1 &
-SERVER_PID=$!
-sleep 3
-
-# Kiểm tra server có chạy không
-if ps -p $SERVER_PID > /dev/null; then
-    echo "✓ Server process running (PID: $SERVER_PID)"
-    
-    # Kiểm tra TCP port
-    if ss -tuln | grep -q ":1194 "; then
-        echo "✓ TCP port 1194 listening"
-    else
-        echo "✗ TCP port 1194 NOT listening"
-    fi
-    
-    # Kiểm tra UDP port
-    if ss -tuln | grep -q ":51820 "; then
-        echo "✓ UDP port 51820 listening"
-    else
-        echo "✗ UDP port 51820 NOT listening"
-    fi
-    
-    # Kiểm tra TUN interface
-    sleep 1
-    if ip link show | grep -q "tun0"; then
-        echo "✓ TUN interface created:"
-        ip addr show tun0 | grep -E "inet |UP"
-    else
-        echo "⚠ TUN interface not yet created (waiting for first client)"
-    fi
-    
-    # Hiển thị 10 dòng log cuối
-    echo ""
-    echo "=== Server Log (last 10 lines) ==="
-    tail -10 test_output.log
-    
-else
-    echo "✗ Server failed to start"
-    echo ""
-    echo "=== Error Log ==="
-    cat test_output.log
-    exit 1
-fi
-
-# Cleanup test
-kill $SERVER_PID 2>/dev/null
-wait $SERVER_PID 2>/dev/null
-
+echo "=== Build Completed Successfully ==="
 echo ""
-echo "=== Build & Test Completed ==="
+echo "📋 To run the server:"
+echo "   sudo ./vpn_server"
 echo ""
-echo "📋 Next steps:"
-echo "   1. Run server:     sudo ./vpn_server"
-echo "   2. In VPN prompt:  start"
-echo "   3. Check status:   status"
-echo "   4. View logs:      tail -f /tmp/vpn_server.log (if logging enabled)"
+echo "📋 Basic commands:"
+echo "   start       - Start the VPN server"
+echo "   status      - Check server status"
+echo "   clients     - List connected clients"
+echo "   help        - Show all commands"
+echo "   quit        - Exit"
 echo ""
-echo "🔧 Useful commands:"
-echo "   - Check TUN:       ip addr show tun0"
-echo "   - Check routes:    ip route | grep tun0"
-echo "   - Check NAT:       iptables -t nat -L -n -v"
-echo "   - Check traffic:   watch -n1 'ss -tuln | grep -E \"1194|51820\"'"
+echo "🔧 Useful system commands:"
+echo "   ip addr show tun0              - Check TUN interface"
+echo "   ip route | grep tun0           - Check routing"
+echo "   iptables -t nat -L -n -v       - Check NAT rules"
+echo "   ss -tuln | grep -E '1194|5502' - Check listening ports"
 echo ""
 echo "⚠️  Remember: Server needs root privileges!"

@@ -70,15 +70,15 @@ bool VPNServer::initialize() {
     memset(&udpAddr, 0, sizeof(udpAddr));
     udpAddr.sin_family = AF_INET;
     udpAddr.sin_addr.s_addr = INADDR_ANY;
-    udpAddr.sin_port = htons(51820);
+    udpAddr.sin_port = htons(5502);
     
     if (bind(udpSocket, (struct sockaddr*)&udpAddr, sizeof(udpAddr)) < 0) {
         std::cout << "[ERROR] Cannot bind UDP socket\n";
         return false;
     }
     
-    std::cout << "[VPN_SERVER] UDP socket bound to port 51820\n";
-    std::cout << "[VPN_SERVER] VPN Server initialized on TCP:" << serverPort << " UDP:51820\n";
+    std::cout << "[VPN_SERVER] UDP socket bound to port 5502\n";
+    std::cout << "[VPN_SERVER] VPN Server initialized on TCP:" << serverPort << " UDP:5502\n";
     
     return true;
 }
@@ -139,7 +139,7 @@ void VPNServer::start() {
     std::cout << "[INFO] ========================================\n";
     std::cout << "[INFO] VPN Server Started Successfully!\n";
     std::cout << "[INFO] TCP Control Port: " << serverPort << "\n";
-    std::cout << "[INFO] UDP Data Port: 51820\n";
+    std::cout << "[INFO] UDP Data Port: 5502\n";
     std::cout << "[INFO] Server VPN IP: 10.8.0.1/24\n";
     std::cout << "[INFO] Client IP Range: 10.8.0.2 - 10.8.0.254\n";
     std::cout << "[INFO] ========================================\n";
@@ -357,7 +357,7 @@ bool VPNServer::handleAuthCommand(int clientId, std::istringstream& iss) {
         if (clientManager->assignVPNIP(clientId)) {
             std::string vpnIP = clientManager->getClientVPNIP(clientId);
             std::string response = "AUTH_OK|Authentication successful|VPN_IP:" + vpnIP + 
-                     "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24|UDP_PORT:51820" +
+                     "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24|UDP_PORT:5502" +
                      "|CLIENT_ID:" + std::to_string(clientId) + "\n";  
             clientManager->sendToClient(clientId, response);
             std::cout << "[AUTH] Client " << clientId << " (" << username 
