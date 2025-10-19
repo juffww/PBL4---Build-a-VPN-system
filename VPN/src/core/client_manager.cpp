@@ -69,7 +69,7 @@ std::vector<std::string> IPPool::getAllAssignedIPs() const {
 
 // Client Manager implementation
 ClientManager::ClientManager() : nextClientId(1), packetHandler(nullptr) {
-    ipPool = new IPPool("10.8.0", 2, 254); // IP range 10.8.0.2 - 10.8.0.254
+    ipPool = new IPPool("10.8.0", 2, 254);
 }
 
 ClientManager::~ClientManager() {
@@ -113,8 +113,6 @@ bool ClientManager::authenticateClient(int clientId, const std::string& username
     auto it = clients.find(clientId);
     if (it == clients.end()) return false;
     
-    // Simple authentication - accept any non-empty credentials
-    // In production, implement proper authentication (database, LDAP, etc.)
     bool authenticated = !username.empty() && !password.empty();
     
     if (authenticated) {
@@ -208,10 +206,8 @@ void ClientManager::handleClientPacket(int clientId, const char* packet, int siz
         return;
     }
     
-    // Cập nhật thống kê client
-    updateClientStats(clientId, 0, size); // bytes received from client
+    updateClientStats(clientId, 0, size); 
     
-    // Chuyển packet cho packet handler xử lý
     packetHandler->handleClientPacket(clientId, packet, size);
 }
 

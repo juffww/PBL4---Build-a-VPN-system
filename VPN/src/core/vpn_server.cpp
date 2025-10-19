@@ -32,7 +32,6 @@ VPNServer::~VPNServer() {
     cleanup();
 }
 
-// ============ vpn_server.cpp - initialize() ============
 bool VPNServer::initialize() {    
     std::cout << "[VPN_SERVER] Starting initialization...\n";
     std::cout << "[DEBUG] Creating ClientManager...\n";
@@ -119,7 +118,6 @@ bool VPNServer::initializeServerSocket() {
     return true;
 }
 
-// ============ vpn_server.cpp - start() ============
 void VPNServer::start() {
     if (serverSocket == INVALID_SOCKET) {
         std::cout << "[ERROR] Server not initialized\n";
@@ -147,65 +145,171 @@ void VPNServer::start() {
     acceptConnections();
 }
 
-// ============ vpn_server.cpp - handleUDPPackets() ============
+// void VPNServer::handleUDPPackets() {
+//     char buffer[8192];
+//     struct sockaddr_in clientAddr;
+//     socklen_t addrLen = sizeof(clientAddr);
+    
+//     std::cout << "[UDP] UDP handler thread started\n";
+    
+//     struct timeval tv;
+//     tv.tv_sec = 1;
+//     tv.tv_usec = 0;
+//     setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    
+//     while (!shouldStop) {
+//         int n = recvfrom(udpSocket, buffer, sizeof(buffer), 0,
+//                          (struct sockaddr*)&clientAddr, &addrLen);
+        
+//         if (n > 8) {
+//             int clientId = *(int*)buffer;
+//             int dataSize = *(int*)(buffer + 4);
+            
+//             if (clientId <= 0 || clientId > 1000) {
+//                 std::cout << "[UDP] Invalid client ID: " << clientId << "\n";
+//                 continue;
+//             }
+            
+//             if (dataSize == 0) {
+//                 {
+//                     std::lock_guard<std::mutex> lock(udpAddrMutex);
+//                     clientUDPAddrs[clientId] = clientAddr;
+//                 }
+                
+//                 char ip[INET_ADDRSTRLEN];
+//                 inet_ntop(AF_INET, &clientAddr.sin_addr, ip, INET_ADDRSTRLEN);
+//                 std::cout << "[UDP] HANDSHAKE from client " << clientId 
+//                           << " at " << ip << ":" << ntohs(clientAddr.sin_port) << "\n";
+                
+//                 char ack[8];
+//                 *(int*)ack = clientId;
+//                 *(int*)(ack + 4) = 0;
+                
+//                 int sent = sendto(udpSocket, ack, 8, 0, 
+//                                  (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+                
+//                 if (sent > 0) {
+//                     std::cout << "[UDP] Sent ACK to client " << clientId << "\n";
+//                 } else {
+//                     std::cout << "[UDP] Failed to send ACK: " << strerror(errno) << "\n";
+//                 }
+                
+//                 continue;
+//             }
+            
+//             if (dataSize > 0 && dataSize <= (n - 8) && dataSize < 65536) {
+//                 {
+//                     std::lock_guard<std::mutex> lock(udpAddrMutex);
+//                     clientUDPAddrs[clientId] = clientAddr;
+//                 }
+                
+//                 static int packetCount = 0;
+//                 if (++packetCount % 50 == 0) {
+//                     std::cout << "[UDP] Received " << packetCount 
+//                               << " packets (" << dataSize << " bytes) from client " 
+//                               << clientId << "\n";
+//                 }
+                
+//                 if (clientManager) {
+//                     clientManager->handleClientPacket(clientId, buffer + 8, dataSize);
+//                 }
+//             } else if (dataSize > 0) {
+//                 std::cout << "[UDP] Invalid packet size: " << dataSize 
+//                           << " (received: " << n << " bytes)\n";
+//             }
+//         } else if (n < 0) {
+//             if (errno != EAGAIN && errno != EWOULDBLOCK && errno != ETIMEDOUT) {
+//                 std::cout << "[ERROR] UDP recv error: " << strerror(errno) << "\n";
+//             }
+//         }
+//     }
+    
+//     std::cout << "[UDP] UDP handler thread stopped\n";
+// }
+// Thay thế hàm handleUDPPackets() trong vpn_server.cpp:
+
 void VPNServer::handleUDPPackets() {
     char buffer[8192];
     struct sockaddr_in clientAddr;
     socklen_t addrLen = sizeof(clientAddr);
     
-    std::cout << "[UDP] UDP handler thread started\n";
+    std::cout << "[UDP] UDP handler thread started on port 5502\n";
+    
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
     
     while (!shouldStop) {
         int n = recvfrom(udpSocket, buffer, sizeof(buffer), 0,
                          (struct sockaddr*)&clientAddr, &addrLen);
         
-        if (n > 8) { // Minimum: 4 bytes clientId + 4 bytes size
-            int clientId = *(int*)buffer;
-            int dataSize = *(int*)(buffer + 4);
+        if (n > 0) {
+            char ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &clientAddr.sin_addr, ip, INET_ADDRSTRLEN);
             
-            // === THÃƒÅ M Ã„ÂOÃ¡Âº N NÃƒâ‚¬Y: XÃ¡Â»Â¬ LÃƒÂ HANDSHAKE ===
-            if (dataSize == 0) {
-                // Ã„ÂÃƒÂ¢y lÃƒ  UDP HANDSHAKE packet
-                {
-                    std::lock_guard<std::mutex> lock(udpAddrMutex);
-                    clientUDPAddrs[clientId] = clientAddr;
+            if (n >= 8) {
+                int clientId = *(int*)buffer;
+                int dataSize = *(int*)(buffer + 4);
+                
+                std::cout << "[UDP] Received " << n << " bytes from " << ip 
+                          << ":" << ntohs(clientAddr.sin_port) 
+                          << " | ClientID=" << clientId << " | DataSize=" << dataSize << "\n";
+                
+                if (clientId <= 0 || clientId > 1000) {
+                    std::cout << "[UDP] ✗ Invalid client ID: " << clientId << "\n";
+                    continue;
                 }
                 
-                char ip[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &clientAddr.sin_addr, ip, INET_ADDRSTRLEN);
-                std::cout << "[UDP] Ã¢Å“â€œ HANDSHAKE from client " << clientId 
-                          << " at " << ip << ":" << ntohs(clientAddr.sin_port) << "\n";
+                // HANDSHAKE
+                if (dataSize == 0) {
+                    {
+                        std::lock_guard<std::mutex> lock(udpAddrMutex);
+                        clientUDPAddrs[clientId] = clientAddr;
+                    }
+                    
+                    std::cout << "[UDP] ✓ HANDSHAKE from client " << clientId 
+                              << " at " << ip << ":" << ntohs(clientAddr.sin_port) << "\n";
+                    
+                    char ack[8];
+                    *(int*)ack = clientId;
+                    *(int*)(ack + 4) = 0;
+                    
+                    int sent = sendto(udpSocket, ack, 8, 0, 
+                                     (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+                    
+                    if (sent > 0) {
+                        std::cout << "[UDP] ✓ Sent ACK to client " << clientId << "\n";
+                    } else {
+                        std::cout << "[UDP] ✗ Failed to send ACK: " << strerror(errno) << "\n";
+                    }
+                    continue;
+                }
                 
-                // GÃ¡Â»Â¬I LÃ¡Âº I ACK (optional nhÃ†Â°ng tÃ¡Â»â€˜t cho debug)
-                char ack[8];
-                *(int*)ack = clientId;
-                *(int*)(ack + 4) = 0;  // ACK handshake
-                sendto(udpSocket, ack, 8, 0, 
-                       (struct sockaddr*)&clientAddr, sizeof(clientAddr));
-                
-                continue;  // KhÃƒÂ´ng xÃ¡Â»Â­ lÃƒÂ½ tiÃ¡ÂºÂ¿p
+                // DATA PACKET
+                if (dataSize > 0 && dataSize <= (n - 8) && dataSize < 65536) {
+                    {
+                        std::lock_guard<std::mutex> lock(udpAddrMutex);
+                        clientUDPAddrs[clientId] = clientAddr;
+                    }
+                    
+                    static int packetCount = 0;
+                    if (++packetCount % 10 == 0) {
+                        std::cout << "[UDP] ✓ Received " << packetCount 
+                                  << " data packets from client " << clientId << "\n";
+                    }
+                    
+                    if (clientManager) {
+                        clientManager->handleClientPacket(clientId, buffer + 8, dataSize);
+                    }
+                }
+            } else {
+                std::cout << "[UDP] ✗ Packet too small: " << n << " bytes\n";
             }
-            // === KÃ¡ÂºÂ¾T THÃƒÅ¡C HANDSHAKE ===
-            
-            // XÃ¡Â»Â¬ LÃƒÂ DATA PACKET BÃƒÅ’NH THÃ†Â¯Ã¡Â»Å“NG
-            if (dataSize > 0 && dataSize <= (n - 8)) {
-                // LÃ†Â°u UDP address (cÃ¡ÂºÂ­p nhÃ¡ÂºÂ­t liÃƒÂªn tÃ¡Â»Â¥c)
-                {
-                    std::lock_guard<std::mutex> lock(udpAddrMutex);
-                    clientUDPAddrs[clientId] = clientAddr;
-                }
-                
-                static int packetCount = 0;
-                if (++packetCount % 10 == 0) {  // Log mÃ¡Â»â€”i 10 packets
-                    std::cout << "[UDP] Received packet " << packetCount 
-                              << " (" << dataSize << " bytes) from client " << clientId << "\n";
-                }
-                
-                // XÃ¡Â»Â­ lÃƒÂ½ packet
-                clientManager->handleClientPacket(clientId, buffer + 8, dataSize);
+        } else if (n < 0) {
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != ETIMEDOUT) {
+                std::cout << "[UDP] ✗ recv error: " << strerror(errno) << "\n";
             }
-        } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-            std::cout << "[ERROR] UDP recv error: " << strerror(errno) << "\n";
         }
     }
     
@@ -238,10 +342,8 @@ void VPNServer::acceptConnections() {
         std::string clientIP = inet_ntoa(clientAddr.sin_addr);
         int clientPort = ntohs(clientAddr.sin_port);
         
-        // Add client to manager
         int clientId = clientManager->addClient(clientSocket, clientIP, clientPort);
         
-        // Start client handling thread
         clientThreads.emplace_back([this, clientId]() {
             handleClient(clientId);
         });
@@ -269,31 +371,25 @@ void VPNServer::handleClient(int clientId) {
 
         messageBuffer.append(buffer, bytesReceived);
 
-        // VÃƒÂ²ng lÃ¡ÂºÂ·p xÃ¡Â»Â­ lÃƒÂ½ dÃ¡Â»Â¯ liÃ¡Â»â€¡u trong buffer
         bool processedData = true;
         while(processedData) {
             processedData = false;
             if (expectingPacketData) {
-                // if (messageBuffer.length() >= packetSizeToRead) {
                 if (messageBuffer.length() >= static_cast<size_t>(packetSizeToRead)){
-                    // Ã„ÂÃƒÂ£ nhÃ¡ÂºÂ­n Ã„â€˜Ã¡Â»Â§ dÃ¡Â»Â¯ liÃ¡Â»â€¡u packet
                     std::cout << "[CLIENT->TUN] Received " << packetSizeToRead << " bytes from client " << clientId << "\n";
                     clientManager->handleClientPacket(clientId, messageBuffer.data(), packetSizeToRead);
 
-                    // XÃƒÂ³a dÃ¡Â»Â¯ liÃ¡Â»â€¡u Ã„â€˜ÃƒÂ£ xÃ¡Â»Â­ lÃƒÂ½ khÃ¡Â»Âi buffer vÃƒ  reset state
                     messageBuffer.erase(0, packetSizeToRead);
                     expectingPacketData = false;
                     packetSizeToRead = 0;
-                    processedData = true; // TiÃ¡ÂºÂ¿p tÃ¡Â»Â¥c xÃ¡Â»Â­ lÃƒÂ½ phÃ¡ÂºÂ§n cÃƒÂ²n lÃ¡ÂºÂ¡i cÃ¡Â»Â§a buffer
+                    processedData = true; 
                 }
             } else {
-                // Ã„Âang tÃƒÂ¬m control message (kÃ¡ÂºÂ¿t thÃƒÂºc bÃ¡ÂºÂ±ng '\n')
                 size_t pos = messageBuffer.find('\n');
                 if (pos != std::string::npos) {
                     std::string message = messageBuffer.substr(0, pos);
                     messageBuffer.erase(0, pos + 1);
 
-                    // XÃ¡Â»Â­ lÃƒÂ½ control message
                     if (message.rfind("PACKET_DATA|", 0) == 0) {
                         if (clientManager->isClientAuthenticated(clientId)) {
                             try {
@@ -305,11 +401,10 @@ void VPNServer::handleClient(int clientId) {
                         }
                     } else {
                         if (!processClientMessage(clientId, message)) {
-                            // LÃ¡Â»â€¡nh yÃƒÂªu cÃ¡ÂºÂ§u ngÃ¡ÂºÂ¯t kÃ¡ÂºÂ¿t nÃ¡Â»â€˜i
                             goto end_loop;
                         }
                     }
-                    processedData = true; // TiÃ¡ÂºÂ¿p tÃ¡Â»Â¥c xÃ¡Â»Â­ lÃƒÂ½ phÃ¡ÂºÂ§n cÃƒÂ²n lÃ¡ÂºÂ¡i cÃ¡Â»Â§a buffer
+                    processedData = true; 
                 }
             }
         }
@@ -335,7 +430,7 @@ bool VPNServer::processClientMessage(int clientId, const std::string& message) {
     }
     else if (command == "DISCONNECT") {
         clientManager->sendToClient(clientId, "BYE|Goodbye\n");
-        return false; // Signal to disconnect
+        return false; 
     }
     else {
         if (!clientManager->isClientAuthenticated(clientId)) {
@@ -356,12 +451,30 @@ bool VPNServer::handleAuthCommand(int clientId, std::istringstream& iss) {
     if (clientManager->authenticateClient(clientId, username, password)) {
         if (clientManager->assignVPNIP(clientId)) {
             std::string vpnIP = clientManager->getClientVPNIP(clientId);
+            
+            // LẤY IP THẬT CỦA SERVER (IP mà client đang kết nối tới)
+            ClientInfo* client = clientManager->getClientInfo(clientId);
+            std::string serverRealIP = "0.0.0.0";
+            if (client && client->socket != INVALID_SOCKET) {
+                struct sockaddr_in addr;
+                socklen_t addr_len = sizeof(addr);
+                if (getsockname(client->socket, (struct sockaddr*)&addr, &addr_len) == 0) {
+                    char ip[INET_ADDRSTRLEN];
+                    inet_ntop(AF_INET, &addr.sin_addr, ip, INET_ADDRSTRLEN);
+                    serverRealIP = std::string(ip);
+                }
+            }
+            
             std::string response = "AUTH_OK|Authentication successful|VPN_IP:" + vpnIP + 
-                     "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24|UDP_PORT:5502" +
-                     "|CLIENT_ID:" + std::to_string(clientId) + "\n";  
+                     "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24"
+                     "|SERVER_REAL_IP:" + serverRealIP + 
+                     "|UDP_PORT:5502" +
+                     "|CLIENT_ID:" + std::to_string(clientId) + "\n";
+                     
             clientManager->sendToClient(clientId, response);
             std::cout << "[AUTH] Client " << clientId << " (" << username 
-                      << ") authenticated, VPN IP: " << vpnIP << ", UDP enabled\n";
+                      << ") authenticated, VPN IP: " << vpnIP 
+                      << ", Server Real IP: " << serverRealIP << "\n";
         } else {
             clientManager->sendToClient(clientId, "AUTH_FAIL|No VPN IP available\n");
         }
@@ -452,7 +565,6 @@ void VPNServer::cleanup() {
     }
 }
 
-// Getter methods
 int VPNServer::getPort() const {
     return serverPort;
 }
@@ -511,10 +623,6 @@ TUNInterface* VPNServer::getTUNInterface() const {
     return tunnelManager ? tunnelManager->getTUNInterface() : nullptr;
 }
 
-// PacketHandler* VPNServer::getPacketHandler() const {
-//     return packetHandler;
-// }
-
 std::vector<std::string> VPNServer::getPacketStats() {
     std::vector<std::string> stats;
     
@@ -533,7 +641,6 @@ std::vector<std::string> VPNServer::getPacketStats() {
         stats.push_back("  To Internet: " + std::to_string(pStats.packetsToInternet) + 
                         " packets (" + std::to_string(pStats.bytesToInternet) + " bytes)");
         
-        // Calculate percentages if we have data
         if (pStats.totalPackets > 0) {
             stats.push_back("");
             stats.push_back("Percentage Distribution:");

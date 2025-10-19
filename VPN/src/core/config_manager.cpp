@@ -3,7 +3,6 @@
 #include <iostream>
 #include <algorithm>
 
-// (Thêm hàm 'trim' để xóa khoảng trắng ở đây)
 std::string trim(const std::string& str) {
     const std::string whitespace = " \t";
     const auto strBegin = str.find_first_not_of(whitespace);
