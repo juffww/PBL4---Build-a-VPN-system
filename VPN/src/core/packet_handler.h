@@ -27,12 +27,8 @@ private:
     PacketStats packetStats;
     
     bool isVPNClient(const std::string& ip);
-    void logPacketInfo(const char* packet, int size, const std::string& srcIP, 
-                      const std::string& dstIP, const std::string& direction);
+
     std::string getProtocolName(uint8_t protocol);
-    void logTCPInfo(const char* tcpHeader, int size);
-    void logUDPInfo(const char* udpHeader, int size);
-    void logICMPInfo(const char* icmpHeader, int size);
     void updatePacketStats(const std::string& direction, int bytes);
 
 public:
@@ -41,7 +37,7 @@ public:
     
     void setTunnelManager(TunnelManager* manager);
     void addClientManager(ClientManager* manager);
-    void setVPNServer(VPNServer* server); // *** THÊM ***
+    void setVPNServer(VPNServer* server); 
     
     void handleTUNPacket(const char* packet, int size, const std::string& srcIP, const std::string& dstIP);
     void handleClientPacket(int clientId, const char* packet, int size);

@@ -18,10 +18,8 @@
     #define SOCKET_ERROR -1
 #endif
 
-// Forward declaration
 class PacketHandler;
 
-// Client information structure
 struct ClientInfo {
     int id;
     SOCKET socket;
@@ -40,7 +38,6 @@ struct ClientInfo {
                    ipAssigned(false), bytesSent(0), bytesReceived(0) {}
 };
 
-// IP Pool management class
 class IPPool {
 private:
     std::string baseNetwork;
@@ -57,7 +54,6 @@ public:
     std::vector<std::string> getAllAssignedIPs() const;
 };
 
-// Client Manager class
 class ClientManager {
 private:
     std::map<int, ClientInfo> clients;
@@ -72,41 +68,34 @@ public:
     ClientManager();
     ~ClientManager();
     
-    // Setup
     void setPacketHandler(PacketHandler* handler);
     
-    // Client management
     int addClient(SOCKET socket, const std::string& realIP, int port);
     bool removeClient(int clientId);
     bool disconnectClient(int clientId);
     
-    // Authentication and IP assignment
     bool authenticateClient(int clientId, const std::string& username, const std::string& password);
     bool assignVPNIP(int clientId);
     void releaseVPNIP(int clientId);
     std::string getClientVPNIP(int clientId);
     int findClientByVPNIP(const std::string& vpnIP);
     
-    // Communication
     bool sendToClient(int clientId, const std::string& message);
     void broadcastToClients(const std::string& message);
     void handleClientPacket(int clientId, const char* packet, int size);
     
-    // Statistics and information
     void updateClientStats(int clientId, long long bytesSent, long long bytesReceived);
     std::vector<ClientInfo> getConnectedClients() const;
     int getClientCount() const;
     std::vector<std::string> getAllAssignedVPNIPs() const;
     int getAvailableIPs() const;
     
-    // Client information
     ClientInfo* getClientInfo(int clientId);
     bool isClientAuthenticated(int clientId);
     bool hasVPNIP(int clientId);
     
-    // Cleanup
     void cleanup();
     std::vector<std::string> getClientStats();
 };
 
-#endif // CLIENT_MANAGER_H
+#endif 

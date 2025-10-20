@@ -14,7 +14,6 @@
     #include <netinet/in.h>
 #endif
 
-// IP Pool implementation
 IPPool::IPPool(const std::string& network, int startRange, int endRange) 
     : baseNetwork(network) {
     for (int i = startRange; i <= endRange; i++) {
@@ -37,7 +36,6 @@ std::string IPPool::assignIP() {
     availableIPs.pop();
     ipUsage[assignedIP] = true;
     
-    std::cout << "[IP_POOL] Assigned IP: " << assignedIP << " (Remaining: " << availableIPs.size() << ")\n";
     return assignedIP;
 }
 
@@ -47,7 +45,6 @@ void IPPool::releaseIP(const std::string& ip) {
     if (it != ipUsage.end() && it->second) {
         it->second = false;
         availableIPs.push(ip);
-        std::cout << "[IP_POOL] Released IP: " << ip << " (Available: " << availableIPs.size() << ")\n";
     }
 }
 
@@ -102,8 +99,8 @@ int ClientManager::addClient(SOCKET socket, const std::string& realIP, int port)
         clients[clientInfo.id] = clientInfo;
     }
     
-    std::cout << "[CLIENT_MGR] New client added - ID: " << clientInfo.id 
-              << ", Real IP: " << realIP << ":" << port << "\n";
+    std::cout << "[CLIENT] Connected - ID: " << clientInfo.id 
+              << ", IP: " << realIP << ":" << port << "\n";
     
     return clientInfo.id;
 }
@@ -118,10 +115,7 @@ bool ClientManager::authenticateClient(int clientId, const std::string& username
     if (authenticated) {
         it->second.authenticated = true;
         it->second.username = username;
-        
-        std::cout << "[CLIENT_MGR] Client " << clientId << " (" << username << ") authenticated\n";
-    } else {
-        std::cout << "[CLIENT_MGR] Authentication failed for client " << clientId << "\n";
+        std::cout << "[AUTH] Client " << clientId << " (" << username << ") authenticated\n";
     }
     
     return authenticated;
@@ -140,7 +134,7 @@ bool ClientManager::assignVPNIP(int clientId) {
     it->second.assignedVpnIP = assignedIP;
     it->second.ipAssigned = true;
     
-    std::cout << "[CLIENT_MGR] Assigned VPN IP " << assignedIP << " to client " << clientId << "\n";
+    std::cout << "[VPN] Assigned IP " << assignedIP << " to client " << clientId << "\n";
     return true;
 }
 
@@ -149,8 +143,6 @@ void ClientManager::releaseVPNIP(int clientId) {
     auto it = clients.find(clientId);
     if (it != clients.end() && it->second.ipAssigned) {
         ipPool->releaseIP(it->second.assignedVpnIP);
-        std::cout << "[CLIENT_MGR] Released VPN IP " << it->second.assignedVpnIP 
-                  << " from client " << clientId << "\n";
         it->second.ipAssigned = false;
         it->second.assignedVpnIP.clear();
     }
@@ -183,9 +175,6 @@ bool ClientManager::sendToClient(int clientId, const std::string& message) {
         ssize_t sent = send(it->second.socket, message.c_str(), message.length(), MSG_NOSIGNAL);
         if (sent > 0) {
             return true;
-        } else {
-            std::cout << "[ERROR] Failed to send message to client " << clientId 
-                      << ": " << strerror(errno) << "\n";
         }
     }
     return false;
@@ -202,12 +191,10 @@ void ClientManager::broadcastToClients(const std::string& message) {
 
 void ClientManager::handleClientPacket(int clientId, const char* packet, int size) {
     if (!packetHandler) {
-        std::cout << "[ERROR] No packet handler available\n";
         return;
     }
     
     updateClientStats(clientId, 0, size); 
-    
     packetHandler->handleClientPacket(clientId, packet, size);
 }
 
@@ -221,10 +208,9 @@ bool ClientManager::removeClient(int clientId) {
         
         if (it->second.ipAssigned) {
             ipPool->releaseIP(it->second.assignedVpnIP);
-            std::cout << "[CLIENT_MGR] Released VPN IP: " << it->second.assignedVpnIP << "\n";
         }
         
-        std::cout << "[CLIENT_MGR] Removed client " << clientId << "\n";
+        std::cout << "[CLIENT] Disconnected - ID: " << clientId << "\n";
         clients.erase(it);
         return true;
     }
@@ -246,7 +232,7 @@ bool ClientManager::disconnectClient(int clientId) {
         }
         
         clients.erase(it);
-        std::cout << "[CLIENT_MGR] Disconnected client " << clientId << "\n";
+        std::cout << "[CLIENT] Kicked - ID: " << clientId << "\n";
         return true;
     }
     return false;
@@ -307,8 +293,6 @@ bool ClientManager::hasVPNIP(int clientId) {
 }
 
 void ClientManager::cleanup() {
-    std::cout << "[CLIENT_MGR] Cleaning up clients...\n";
-    
     std::lock_guard<std::mutex> lock(clientsMutex);
     for (auto& pair : clients) {
         if (pair.second.socket != INVALID_SOCKET) {
@@ -320,8 +304,6 @@ void ClientManager::cleanup() {
         }
     }
     clients.clear();
-    
-    std::cout << "[CLIENT_MGR] All clients cleaned up\n";
 }
 
 std::string ClientManager::getCurrentTime() {

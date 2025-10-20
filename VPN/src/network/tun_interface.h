@@ -27,7 +27,7 @@ public:
     int writePacket(const char* buffer, int size);
     void close();
     void resetStats();
-    // Getters
+
     std::string getInterfaceName() const { return interfaceName; }
     std::string getName() const { return interfaceName; }
     std::string getIP() const { return vpnIP; }

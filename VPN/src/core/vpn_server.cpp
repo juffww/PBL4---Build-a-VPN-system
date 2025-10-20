@@ -33,14 +33,10 @@ VPNServer::~VPNServer() {
 }
 
 bool VPNServer::initialize() {    
-    std::cout << "[VPN_SERVER] Starting initialization...\n";
-    std::cout << "[DEBUG] Creating ClientManager...\n";
+    std::cout << "[SERVER] Initializing...\n";
+    
     clientManager = new ClientManager();
-    
-    std::cout << "[DEBUG] Creating TunnelManager...\n";
     tunnelManager = new TunnelManager("tun0");
-    
-    std::cout << "[DEBUG] Creating PacketHandler...\n";
     packetHandler = new PacketHandler();
     
     packetHandler->addClientManager(clientManager);
@@ -49,7 +45,6 @@ bool VPNServer::initialize() {
     clientManager->setPacketHandler(packetHandler);
     
     if (!tunnelManager->initialize("10.8.0.1", "10.8.0", packetHandler)) {
-        std::cout << "[ERROR] Cannot initialize tunnel manager\n";
         std::cout << "[ERROR] Tunnel initialization failed\n";
         return false;
     }
@@ -76,8 +71,7 @@ bool VPNServer::initialize() {
         return false;
     }
     
-    std::cout << "[VPN_SERVER] UDP socket bound to port 5502\n";
-    std::cout << "[VPN_SERVER] VPN Server initialized on TCP:" << serverPort << " UDP:5502\n";
+    std::cout << "[SERVER] Ready on TCP:" << serverPort << " UDP:5502\n";
     
     return true;
 }
@@ -130,9 +124,7 @@ void VPNServer::start() {
     
     tunnelManager->start();
     
-    // Start UDP thread
     udpThread = std::thread(&VPNServer::handleUDPPackets, this);
-    std::cout << "[VPN_SERVER] UDP listener started\n";
     
     std::cout << "[INFO] ========================================\n";
     std::cout << "[INFO] VPN Server Started Successfully!\n";
@@ -145,95 +137,10 @@ void VPNServer::start() {
     acceptConnections();
 }
 
-// void VPNServer::handleUDPPackets() {
-//     char buffer[8192];
-//     struct sockaddr_in clientAddr;
-//     socklen_t addrLen = sizeof(clientAddr);
-    
-//     std::cout << "[UDP] UDP handler thread started\n";
-    
-//     struct timeval tv;
-//     tv.tv_sec = 1;
-//     tv.tv_usec = 0;
-//     setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-    
-//     while (!shouldStop) {
-//         int n = recvfrom(udpSocket, buffer, sizeof(buffer), 0,
-//                          (struct sockaddr*)&clientAddr, &addrLen);
-        
-//         if (n > 8) {
-//             int clientId = *(int*)buffer;
-//             int dataSize = *(int*)(buffer + 4);
-            
-//             if (clientId <= 0 || clientId > 1000) {
-//                 std::cout << "[UDP] Invalid client ID: " << clientId << "\n";
-//                 continue;
-//             }
-            
-//             if (dataSize == 0) {
-//                 {
-//                     std::lock_guard<std::mutex> lock(udpAddrMutex);
-//                     clientUDPAddrs[clientId] = clientAddr;
-//                 }
-                
-//                 char ip[INET_ADDRSTRLEN];
-//                 inet_ntop(AF_INET, &clientAddr.sin_addr, ip, INET_ADDRSTRLEN);
-//                 std::cout << "[UDP] HANDSHAKE from client " << clientId 
-//                           << " at " << ip << ":" << ntohs(clientAddr.sin_port) << "\n";
-                
-//                 char ack[8];
-//                 *(int*)ack = clientId;
-//                 *(int*)(ack + 4) = 0;
-                
-//                 int sent = sendto(udpSocket, ack, 8, 0, 
-//                                  (struct sockaddr*)&clientAddr, sizeof(clientAddr));
-                
-//                 if (sent > 0) {
-//                     std::cout << "[UDP] Sent ACK to client " << clientId << "\n";
-//                 } else {
-//                     std::cout << "[UDP] Failed to send ACK: " << strerror(errno) << "\n";
-//                 }
-                
-//                 continue;
-//             }
-            
-//             if (dataSize > 0 && dataSize <= (n - 8) && dataSize < 65536) {
-//                 {
-//                     std::lock_guard<std::mutex> lock(udpAddrMutex);
-//                     clientUDPAddrs[clientId] = clientAddr;
-//                 }
-                
-//                 static int packetCount = 0;
-//                 if (++packetCount % 50 == 0) {
-//                     std::cout << "[UDP] Received " << packetCount 
-//                               << " packets (" << dataSize << " bytes) from client " 
-//                               << clientId << "\n";
-//                 }
-                
-//                 if (clientManager) {
-//                     clientManager->handleClientPacket(clientId, buffer + 8, dataSize);
-//                 }
-//             } else if (dataSize > 0) {
-//                 std::cout << "[UDP] Invalid packet size: " << dataSize 
-//                           << " (received: " << n << " bytes)\n";
-//             }
-//         } else if (n < 0) {
-//             if (errno != EAGAIN && errno != EWOULDBLOCK && errno != ETIMEDOUT) {
-//                 std::cout << "[ERROR] UDP recv error: " << strerror(errno) << "\n";
-//             }
-//         }
-//     }
-    
-//     std::cout << "[UDP] UDP handler thread stopped\n";
-// }
-// Thay thế hàm handleUDPPackets() trong vpn_server.cpp:
-
 void VPNServer::handleUDPPackets() {
     char buffer[8192];
     struct sockaddr_in clientAddr;
     socklen_t addrLen = sizeof(clientAddr);
-    
-    std::cout << "[UDP] UDP handler thread started on port 5502\n";
     
     struct timeval tv;
     tv.tv_sec = 1;
@@ -245,19 +152,11 @@ void VPNServer::handleUDPPackets() {
                          (struct sockaddr*)&clientAddr, &addrLen);
         
         if (n > 0) {
-            char ip[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &clientAddr.sin_addr, ip, INET_ADDRSTRLEN);
-            
             if (n >= 8) {
                 int clientId = *(int*)buffer;
                 int dataSize = *(int*)(buffer + 4);
                 
-                std::cout << "[UDP] Received " << n << " bytes from " << ip 
-                          << ":" << ntohs(clientAddr.sin_port) 
-                          << " | ClientID=" << clientId << " | DataSize=" << dataSize << "\n";
-                
                 if (clientId <= 0 || clientId > 1000) {
-                    std::cout << "[UDP] ✗ Invalid client ID: " << clientId << "\n";
                     continue;
                 }
                 
@@ -268,21 +167,12 @@ void VPNServer::handleUDPPackets() {
                         clientUDPAddrs[clientId] = clientAddr;
                     }
                     
-                    std::cout << "[UDP] ✓ HANDSHAKE from client " << clientId 
-                              << " at " << ip << ":" << ntohs(clientAddr.sin_port) << "\n";
-                    
                     char ack[8];
                     *(int*)ack = clientId;
                     *(int*)(ack + 4) = 0;
                     
-                    int sent = sendto(udpSocket, ack, 8, 0, 
-                                     (struct sockaddr*)&clientAddr, sizeof(clientAddr));
-                    
-                    if (sent > 0) {
-                        std::cout << "[UDP] ✓ Sent ACK to client " << clientId << "\n";
-                    } else {
-                        std::cout << "[UDP] ✗ Failed to send ACK: " << strerror(errno) << "\n";
-                    }
+                    sendto(udpSocket, ack, 8, 0, 
+                          (struct sockaddr*)&clientAddr, sizeof(clientAddr));
                     continue;
                 }
                 
@@ -293,27 +183,17 @@ void VPNServer::handleUDPPackets() {
                         clientUDPAddrs[clientId] = clientAddr;
                     }
                     
-                    static int packetCount = 0;
-                    if (++packetCount % 10 == 0) {
-                        std::cout << "[UDP] ✓ Received " << packetCount 
-                                  << " data packets from client " << clientId << "\n";
-                    }
-                    
                     if (clientManager) {
                         clientManager->handleClientPacket(clientId, buffer + 8, dataSize);
                     }
                 }
-            } else {
-                std::cout << "[UDP] ✗ Packet too small: " << n << " bytes\n";
             }
         } else if (n < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK && errno != ETIMEDOUT) {
-                std::cout << "[UDP] ✗ recv error: " << strerror(errno) << "\n";
+                // Ignore timeout errors
             }
         }
     }
-    
-    std::cout << "[UDP] UDP handler thread stopped\n";
 }
 
 bool VPNServer::getClientUDPAddr(int clientId, struct sockaddr_in& addr) {
@@ -365,7 +245,6 @@ void VPNServer::handleClient(int clientId) {
     while (!shouldStop && client->socket != INVALID_SOCKET) {
         int bytesReceived = recv(client->socket, buffer, sizeof(buffer), 0);
         if (bytesReceived <= 0) {
-            std::cout << "[INFO] Client " << clientId << " disconnected (recv=" << bytesReceived << ")\n";
             break;
         }
 
@@ -376,7 +255,6 @@ void VPNServer::handleClient(int clientId) {
             processedData = false;
             if (expectingPacketData) {
                 if (messageBuffer.length() >= static_cast<size_t>(packetSizeToRead)){
-                    std::cout << "[CLIENT->TUN] Received " << packetSizeToRead << " bytes from client " << clientId << "\n";
                     clientManager->handleClientPacket(clientId, messageBuffer.data(), packetSizeToRead);
 
                     messageBuffer.erase(0, packetSizeToRead);
@@ -397,7 +275,7 @@ void VPNServer::handleClient(int clientId) {
                                 if (packetSizeToRead > 0 && packetSizeToRead < 4096) {
                                     expectingPacketData = true;
                                 }
-                            } catch (const std::exception&) { /* ignore */ }
+                            } catch (const std::exception&) { }
                         }
                     } else {
                         if (!processClientMessage(clientId, message)) {
@@ -411,9 +289,9 @@ void VPNServer::handleClient(int clientId) {
     }
 
 end_loop:
-    std::cout << "[INFO] Client " << clientId << " disconnected\n";
     clientManager->removeClient(clientId);
 }
+
 bool VPNServer::processClientMessage(int clientId, const std::string& message) {
     std::istringstream iss(message);
     std::string command;
@@ -436,7 +314,6 @@ bool VPNServer::processClientMessage(int clientId, const std::string& message) {
         if (!clientManager->isClientAuthenticated(clientId)) {
             clientManager->sendToClient(clientId, "ERROR|Please authenticate first\n");
         } else {
-            std::cout << "[WARN] Unknown command from client " << clientId << ": " << command << "\n";
             clientManager->sendToClient(clientId, "ERROR|Unknown command\n");
         }
     }
@@ -452,7 +329,6 @@ bool VPNServer::handleAuthCommand(int clientId, std::istringstream& iss) {
         if (clientManager->assignVPNIP(clientId)) {
             std::string vpnIP = clientManager->getClientVPNIP(clientId);
             
-            // LẤY IP THẬT CỦA SERVER (IP mà client đang kết nối tới)
             ClientInfo* client = clientManager->getClientInfo(clientId);
             std::string serverRealIP = "0.0.0.0";
             if (client && client->socket != INVALID_SOCKET) {
@@ -472,9 +348,6 @@ bool VPNServer::handleAuthCommand(int clientId, std::istringstream& iss) {
                      "|CLIENT_ID:" + std::to_string(clientId) + "\n";
                      
             clientManager->sendToClient(clientId, response);
-            std::cout << "[AUTH] Client " << clientId << " (" << username 
-                      << ") authenticated, VPN IP: " << vpnIP 
-                      << ", Server Real IP: " << serverRealIP << "\n";
         } else {
             clientManager->sendToClient(clientId, "AUTH_FAIL|No VPN IP available\n");
         }
@@ -515,7 +388,7 @@ bool VPNServer::handleStatusCommand(int clientId) {
 }
 
 void VPNServer::stop() {
-    std::cout << "[VPN_SERVER] Stopping VPN Server...\n";
+    std::cout << "[SERVER] Stopping...\n";
     
     shouldStop = true;
     isRunning = false;
@@ -545,7 +418,7 @@ void VPNServer::stop() {
     }
     clientThreads.clear();
     
-    std::cout << "[VPN_SERVER] VPN Server stopped\n";
+    std::cout << "[SERVER] Stopped\n";
 }
 
 void VPNServer::cleanup() {

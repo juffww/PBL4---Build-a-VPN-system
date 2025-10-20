@@ -19,7 +19,7 @@ private:
     
     void processPackets();
     void processIPPacket(const char* packet, int size);
-    void setupVPNRouting(const std::string& serverIP, const std::string& subnet);
+    void setupVPNRouting(const std::string& subnet);
     void setupNATRules(const std::string& subnet);
     void cleanupNATRules();
 
@@ -27,15 +27,12 @@ public:
     explicit TunnelManager(const std::string& interfaceName = "tun0");
     ~TunnelManager();
     
-    // Core functionality
     bool initialize(const std::string& serverIP, const std::string& subnet, PacketHandler* handler);
     void start();
     void stop();
     
-    // Packet injection
     bool injectPacket(const char* packet, int size);
     
-    // Getters
     TUNInterface* getTUNInterface() const;
     bool isRunning() const;
     std::string getInterfaceName() const;
@@ -43,4 +40,4 @@ public:
     long long getBytesSent() const;
 };
 
-#endif // TUNNEL_MANAGER_H
+#endif 
