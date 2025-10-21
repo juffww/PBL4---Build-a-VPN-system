@@ -99,58 +99,6 @@ void PacketHandler::handleClientPacket(int clientId, const char* packet, int siz
     }
 }
 
-// void PacketHandler::forwardPacketToClient(const char* packet, int size, const std::string& destIP) {
-//     if (!clientManager || !vpnServer) {
-//         return;
-//     }
-    
-//     if (size <= 0 || size > 1500) {
-//         return;
-//     }
-    
-//     int clientId = clientManager->findClientByVPNIP(destIP);
-//     if (clientId == -1) {
-//         return;
-//     }
-    
-//     // OPTIMIZATION: Try UDP first (faster path)
-//     struct sockaddr_in clientAddr;
-//     if (vpnServer->getClientUDPAddr(clientId, clientAddr)) {
-//         char buffer[8192];
-        
-//         if (static_cast<size_t>(size + 8) > sizeof(buffer)){
-//             return;
-//         }
-        
-//         *(int*)buffer = clientId;
-//         *(int*)(buffer + 4) = size;
-//         memcpy(buffer + 8, packet, size);
-        
-//         int totalSize = size + 8;
-//         int sent = sendto(vpnServer->getUDPSocket(), buffer, totalSize, 0,
-//                          (struct sockaddr*)&clientAddr, sizeof(clientAddr));
-        
-//         if (sent == totalSize) {
-//             clientManager->updateClientStats(clientId, size, 0);
-//             return;
-//         }
-//     }
-    
-//     // TCP Fallback (only if UDP fails)
-//     ClientInfo* client = clientManager->getClientInfo(clientId);
-//     if (client && client->socket != INVALID_SOCKET) {
-//         std::string header = "PACKET_DATA|" + std::to_string(size) + "\n";
-        
-//         if (send(client->socket, header.c_str(), header.length(), MSG_NOSIGNAL) > 0) {
-//             int sent = send(client->socket, packet, size, MSG_NOSIGNAL);
-//             if (sent > 0) {
-//                 clientManager->updateClientStats(clientId, size, 0);
-//             }
-//         }
-//     }
-// }
-
-// ===== CẢI TIẾN: STRATEGY MỚI CHO UDP/TCP =====
 void PacketHandler::forwardPacketToClient(const char* packet, int size, const std::string& destIP) {
     if (!clientManager || !vpnServer) {
         return;
