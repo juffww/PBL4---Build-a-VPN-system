@@ -1,5 +1,4 @@
 #include "tun_interface.h"
-
 #include <iostream>
 #include <cstring>
 #include <sstream>
@@ -31,7 +30,6 @@ bool TUNInterface::create() {
         return false;
     }
 
-    // Xoá tun0 cũ nếu có
     if (!interfaceName.empty()) {
         std::string delCmd = "ip link del " + interfaceName + " 2>/dev/null";
         system(delCmd.c_str());
@@ -65,10 +63,15 @@ bool TUNInterface::create() {
         fcntl(tunFd, F_SETFL, flags | O_NONBLOCK);
     }
 
-    std::cout << "[INFO] Created TUN interface: " << interfaceName << std::endl;
+    // OPTIMIZATION: Increase socket buffer sizes
+    int sndbuf = 1048576; // 1MB send buffer
+    int rcvbuf = 1048576; // 1MB receive buffer
+    setsockopt(tunFd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+    setsockopt(tunFd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+
+    std::cout << "[INFO] Created TUN interface: " << interfaceName << " (optimized)" << std::endl;
     return true;
 }
-
 
 bool TUNInterface::configure(const std::string& ip, const std::string& mask, const std::string& server, bool isServerMode) {
     if (!isOpen) {
@@ -81,11 +84,17 @@ bool TUNInterface::configure(const std::string& ip, const std::string& mask, con
     if (!setIP(ip, mask)) {
         return false;
     }
+    
+    // OPTIMIZATION: Set TXQueueLen to improve throughput
+    std::string txqCmd = "ip link set dev " + interfaceName + " txqueuelen 1000";
+    executeCommand(txqCmd);
+    
     std::string cmd = "ip link set dev " + interfaceName + " up";
     if (!executeCommand(cmd)) {
         std::cerr << "[ERROR] Cannot bring interface up" << std::endl;
         return false;
     }
+    
     if (isServerMode) {
         std::string defaultInterface = getDefaultInterface();
         if (defaultInterface.empty()) {
@@ -170,42 +179,35 @@ std::string TUNInterface::getDefaultGateway() {
 }
 
 bool TUNInterface::executeCommand(const std::string& cmd) {
-    std::cout << "[CMD] " << cmd << std::endl;
+    // Remove debug output for performance
     int result = system(cmd.c_str());
-    bool success = (result == 0);
-    if (!success) {
-        std::cout << "[WARN] Command failed with exit code: " << result << std::endl;
-    }
-    return success;
+    return (result == 0);
 }
 
 int TUNInterface::readPacket(char* buffer, int maxSize) {
     if (!isOpen || tunFd < 0) return -1;
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(tunFd, &readfds);
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100000;
-    int ready = select(tunFd + 1, &readfds, nullptr, nullptr, &timeout);
-    if (ready <= 0) return 0;
-    if (FD_ISSET(tunFd, &readfds)) {
-        int bytes = read(tunFd, buffer, maxSize);
-        if (bytes > 0) {
-            bytesReceived += bytes;
+    
+    // OPTIMIZATION: Direct read without select() for better performance
+    int bytes = read(tunFd, buffer, maxSize);
+    if (bytes > 0) {
+        bytesReceived += bytes;
+    } else if (bytes < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        // Only log real errors
+        if (errno != EINTR) {
+            std::cerr << "[ERROR] TUN read error: " << strerror(errno) << std::endl;
         }
-        return bytes;
     }
-    return 0;
+    return bytes;
 }
 
 int TUNInterface::writePacket(const char* buffer, int size) {
     if (!isOpen || tunFd < 0) return -1;
+    
     int bytes = write(tunFd, buffer, size);
     if (bytes > 0) {
         bytesSent += bytes;
-        std::cout << "[DEBUG] Wrote " << bytes << " bytes to TUN\n";
-    } else {
+        // Remove debug output completely for performance
+    } else if (bytes < 0) {
         std::cerr << "[ERROR] Write to TUN failed: " << strerror(errno) << std::endl;
     }
     return bytes;

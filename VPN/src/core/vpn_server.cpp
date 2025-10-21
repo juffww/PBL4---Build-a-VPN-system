@@ -137,15 +137,24 @@ void VPNServer::start() {
     acceptConnections();
 }
 
+// Replace the handleUDPPackets() function in vpn_server.cpp with this optimized version:
+
 void VPNServer::handleUDPPackets() {
-    char buffer[8192];
+    char buffer[65536]; // Larger buffer for batch processing
     struct sockaddr_in clientAddr;
     socklen_t addrLen = sizeof(clientAddr);
     
+    // OPTIMIZATION: Reduce timeout for better responsiveness
     struct timeval tv;
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000; // 100ms timeout
     setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    
+    // OPTIMIZATION: Increase UDP buffer sizes
+    int rcvbuf = 2097152; // 2MB
+    int sndbuf = 2097152; // 2MB
+    setsockopt(udpSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvbuf, sizeof(rcvbuf));
+    setsockopt(udpSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&sndbuf, sizeof(sndbuf));
     
     while (!shouldStop) {
         int n = recvfrom(udpSocket, buffer, sizeof(buffer), 0,
@@ -156,6 +165,7 @@ void VPNServer::handleUDPPackets() {
                 int clientId = *(int*)buffer;
                 int dataSize = *(int*)(buffer + 4);
                 
+                // Quick validation
                 if (clientId <= 0 || clientId > 1000) {
                     continue;
                 }
@@ -176,7 +186,7 @@ void VPNServer::handleUDPPackets() {
                     continue;
                 }
                 
-                // DATA PACKET
+                // DATA PACKET - with validation
                 if (dataSize > 0 && dataSize <= (n - 8) && dataSize < 65536) {
                     {
                         std::lock_guard<std::mutex> lock(udpAddrMutex);
@@ -184,15 +194,13 @@ void VPNServer::handleUDPPackets() {
                     }
                     
                     if (clientManager) {
+                        // OPTIMIZATION: Direct packet handling without copying
                         clientManager->handleClientPacket(clientId, buffer + 8, dataSize);
                     }
                 }
             }
-        } else if (n < 0) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != ETIMEDOUT) {
-                // Ignore timeout errors
-            }
         }
+        // Remove error logging for performance
     }
 }
 

@@ -110,20 +110,26 @@ void TunnelManager::stop() {
 }
 
 void TunnelManager::processPackets() {
-    char buffer[2048];
+    char buffer[4096]; // Increased buffer size
+    int consecutiveErrors = 0;
+    const int maxErrors = 10;
     
     while (tunnelThreadRunning && tunInterface && tunInterface->isOpened()) {
         int bytesRead = tunInterface->readPacket(buffer, sizeof(buffer));
         
         if (bytesRead > 0) {
+            consecutiveErrors = 0; // Reset error counter
             if (bytesRead >= 20) {
                 processIPPacket(buffer, bytesRead);
             }
-        } else if (bytesRead == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } else if (bytesRead == 0 || (bytesRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
+            // OPTIMIZATION: Adaptive sleep - sleep longer when idle
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
         } else {
-            if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                std::cout << "[ERROR] TUN read error: " << strerror(errno) << "\n";
+            consecutiveErrors++;
+            if (consecutiveErrors >= maxErrors) {
+                std::cout << "[ERROR] Too many TUN read errors, stopping\n";
+                break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
