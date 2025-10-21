@@ -171,35 +171,63 @@ void MainWindow::connectToVPN()
         return;
     }
 
-    // <<< BẮT ĐẦU LOGIC MỚI >>>
-    // 1. Xác định vùng được chọn và key tương ứng trong file config
+    // 1. Xác định vùng được chọn
     QString serverKey;
     if (usRadioButton->isChecked()) {
         serverKey = "servers/us_server_ip";
     } else if (sgRadioButton->isChecked()) {
         serverKey = "servers/sg_server_ip";
     } else if (ukRadioButton->isChecked()) {
-        serverKey="server/uk_server_ip";
+        serverKey = "servers/uk_server_ip";
     } else {
-        // Quy tắc: Phải chọn vùng trước khi kết nối
-        QMessageBox::warning(this, "Chưa chọn vùng", "Vui lòng chọn một vùng máy chủ (Mỹ hoặc Singapore) trước khi kết nối.");
+        QMessageBox::warning(this, "Chưa chọn vùng",
+                             "Vui lòng chọn một vùng máy chủ trước khi kết nối.");
         return;
     }
 
-    // 2. Đọc IP và Port từ file vpn_config.ini
-    QSettings settings("/Users/vohoangminh/client/vpn_config.ini", QSettings::IniFormat);
-    QString host = settings.value(serverKey).toString();
+    // 2. Đọc IP và Port từ file config
+    QSettings settings("/Users/vohoangminh/client/mac_config.ini", QSettings::IniFormat);
+    QString host = settings.value(serverKey).toString().trimmed();
     int port = settings.value("servers/default_port", 1194).toInt();
 
+    // ===== FIX: KIỂM TRA VÀ LOG =====
+    logTextEdit->append(QString("[DEBUG] Config file: /Users/vohoangminh/client/mac_config.ini"));
+    logTextEdit->append(QString("[DEBUG] Server key: %1").arg(serverKey));
+    logTextEdit->append(QString("[DEBUG] Host read: '%1'").arg(host));
+    logTextEdit->append(QString("[DEBUG] Port: %1").arg(port));
+
     if (host.isEmpty()) {
-        QMessageBox::critical(this, "Lỗi cấu hình", QString("Không tìm thấy IP cho key '%1' trong file vpn_config.ini.").arg(serverKey));
+        QMessageBox::critical(this, "Lỗi cấu hình",
+                              QString("Không tìm thấy IP cho key '%1' trong file mac_config.ini.\n\n"
+                                      "Vui lòng kiểm tra:\n"
+                                      "1. File tồn tại tại: /Users/vohoangminh/client/mac_config.ini\n"
+                                      "2. File có section [servers]\n"
+                                      "3. Có key: %1=<IP_ADDRESS>").arg(serverKey));
+
+        logTextEdit->append("[ERROR] Host is empty!");
         return;
     }
 
-    // Cập nhật lại serverEdit để người dùng biết đang kết nối tới đâu
-    serverEdit->setText(QString("%1:%2").arg(host).arg(port));
-    // <<< KẾT THÚC LOGIC MỚI >>>
+    // ===== FIX: KIỂM TRA IP HỢP LỆ =====
+    QHostAddress testAddr(host);
+    if (testAddr.isNull()) {
+        QMessageBox::critical(this, "Lỗi IP",
+                              QString("IP không hợp lệ: %1").arg(host));
+        logTextEdit->append(QString("[ERROR] Invalid IP address: %1").arg(host));
+        return;
+    }
 
+    // ===== FIX: KIỂM TRA PORT HỢP LỆ =====
+    if (port <= 0 || port > 65535) {
+        QMessageBox::critical(this, "Lỗi Port",
+                              QString("Port không hợp lệ: %1 (phải từ 1-65535)").arg(port));
+        return;
+    }
+
+    // 3. Cập nhật UI
+    serverEdit->setText(QString("%1:%2").arg(host).arg(port));
+
+    // 4. Lấy thông tin đăng nhập
     QString username = usernameEdit->text().trimmed();
     QString password = passwordEdit->text().trimmed();
 
@@ -214,92 +242,34 @@ void MainWindow::connectToVPN()
         return;
     }
 
+    // 5. Bắt đầu kết nối
     connectButton->setEnabled(false);
     progressBar->setVisible(true);
     progressBar->setRange(0, 0);
 
     logTextEdit->append("[INFO] Bắt đầu kết nối VPN...");
-    logTextEdit->append(QString("[INFO] Connecting to server: %1:%2").arg(host).arg(port));
+    logTextEdit->append(QString("[INFO] => Connecting to: %1:%2").arg(host).arg(port));
+    logTextEdit->append(QString("[INFO] => Username: %1").arg(username));
+
+    // ===== FIX: THÊM TIMEOUT HANDLER =====
+    QTimer::singleShot(10000, this, [this, host, port]() {
+        if (!isConnected && !vpnClient->isConnected()) {
+            logTextEdit->append("[ERROR] Connection timeout after 10 seconds");
+            logTextEdit->append(QString("[ERROR] Could not connect to %1:%2").arg(host).arg(port));
+            progressBar->setVisible(false);
+            connectButton->setEnabled(true);
+
+            QMessageBox::critical(this, "Lỗi kết nối",
+                                  QString("Không thể kết nối đến server:\n%1:%2\n\n"
+                                          "Kiểm tra:\n"
+                                          "1. Server có đang chạy không?\n"
+                                          "2. Firewall có chặn không?\n"
+                                          "3. IP và Port có đúng không?").arg(host).arg(port));
+        }
+    });
 
     vpnClient->connectToServer(host, port, username, password);
 }
-
-// void MainWindow::connectToVPN()
-// {
-//     if (isConnected) {
-//         disconnectFromVPN();
-//         return;
-//     }
-
-//     QString username = usernameEdit->text().trimmed();
-//     QString password = passwordEdit->text().trimmed();
-//     QString serverInput = serverEdit->text().trimmed();
-
-//     if (username.isEmpty()) {
-//         QMessageBox::warning(this, "Lỗi", "Vui lòng nhập tên đăng nhập");
-//         usernameEdit->setFocus();
-//         return;
-//     }
-
-//     if (password.isEmpty()) {
-//         QMessageBox::warning(this, "Lỗi", "Vui lòng nhập mật khẩu");
-//         passwordEdit->setFocus();
-//         return;
-//     }
-
-//     QString host;
-//     int port;
-
-//     if (!parseServerAddress(serverInput, host, port)) {
-//         QMessageBox::warning(this, "Lỗi",
-//             "Địa chỉ server không hợp lệ!\n"
-//             "Định dạng: IP:Port (ví dụ: 192.168.1.100:1194)\n"
-//             "Hoặc chỉ IP (sẽ dùng port 1194)");
-//         serverEdit->setFocus();
-//         serverEdit->selectAll();
-//         return;
-//     }
-
-//     connectButton->setEnabled(false);
-//     progressBar->setVisible(true);
-//     progressBar->setRange(0, 0);
-
-//     logTextEdit->append("[INFO] Bắt đầu kết nối VPN...");
-//     logTextEdit->append(QString("[INFO] Connecting to server: %1:%2").arg(host).arg(port));
-
-//     if (!isServerReachable(host)) {
-//         logTextEdit->append(QString("[WARN] Không thể ping tới server %1, vẫn thử kết nối...").arg(host));
-//     }
-
-//     vpnClient->connectToServer(host, port, username, password);
-//     connect(vpnClient, &VPNClient::connected, this, [this]() {
-//         isConnected = true;
-
-//         vpnClient->startTUNTrafficGeneration();
-//         trafficButton->setText("Traffic (Running)");
-//         trafficButton->setEnabled(true);
-//         trafficRunning = true;
-
-//         logTextEdit->append("[INFO] VPN connected. Traffic generation started.");
-//         connectButton->setText("Ngắt kết nối");
-//         connectButton->setEnabled(true);
-//         progressBar->setVisible(false);
-//     });
-
-//     connect(vpnClient, &VPNClient::disconnected, this, [this]() {
-//         isConnected = false;
-
-//         vpnClient->stopTUNTrafficGeneration();
-//         trafficButton->setText("Traffic (Disconnected)");
-//         trafficButton->setEnabled(false);
-//         trafficRunning = false;
-
-//         logTextEdit->append("[INFO] VPN disconnected. Traffic stopped.");
-//         connectButton->setText("Kết nối");
-//         connectButton->setEnabled(true);
-//         progressBar->setVisible(false);
-//     });
-// }
 
 
 bool MainWindow::isServerReachable(const QString& host)

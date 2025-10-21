@@ -63,7 +63,7 @@ OBJECTS       = main.o \
 		tun_interface_mac.o \
 		moc_mainwindow.o \
 		moc_vpn_client.o
-DIST          = ../../vpn_config.ini \
+DIST          = ../../mac_config.ini \
 		/Qt/6.9.2/macos/mkspecs/features/spec_pre.prf \
 		/Qt/6.9.2/macos/mkspecs/features/device_config.prf \
 		/Qt/6.9.2/macos/mkspecs/common/unix.conf \
@@ -943,6 +943,8 @@ moc_vpn_client.cpp: ../../vpn_client.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qobject.h \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QTcpSocket \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qtcpsocket.h \
+		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QUdpSocket \
+		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qudpsocket.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QTimer \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qtimer.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QString \
@@ -1038,6 +1040,8 @@ mainwindow.o: ../../mainwindow.cpp ../../mainwindow.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qobject.h \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QTcpSocket \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qtcpsocket.h \
+		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QUdpSocket \
+		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qudpsocket.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QString \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qstring.h \
 		../../tun_interface.h \
@@ -1071,7 +1075,9 @@ mainwindow.o: ../../mainwindow.cpp ../../mainwindow.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QJsonObject \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qjsonobject.h \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QHostAddress \
-		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qhostaddress.h
+		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qhostaddress.h \
+		../../../Qt/6.9.2/macos/lib/QtWidgets.framework/Headers/QRadioButton \
+		../../../Qt/6.9.2/macos/lib/QtWidgets.framework/Headers/qradiobutton.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o mainwindow.o ../../mainwindow.cpp
 
 vpn_client.o: ../../vpn_client.cpp ../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QRandomGenerator \
@@ -1083,6 +1089,8 @@ vpn_client.o: ../../vpn_client.cpp ../../../Qt/6.9.2/macos/lib/QtCore.framework/
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qobject.h \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QTcpSocket \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qtcpsocket.h \
+		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QUdpSocket \
+		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qudpsocket.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QTimer \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qtimer.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QString \
@@ -1095,13 +1103,7 @@ vpn_client.o: ../../vpn_client.cpp ../../../Qt/6.9.2/macos/lib/QtCore.framework/
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QDebug \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qdebug.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QThread \
-		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qthread.h \
-		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QNetworkRequest \
-		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qnetworkrequest.h \
-		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QNetworkReply \
-		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qnetworkreply.h \
-		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QUrl \
-		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qurl.h
+		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/qthread.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o vpn_client.o ../../vpn_client.cpp
 
 tun_interface_mac.o: ../../tun_interface_mac.cpp ../../tun_interface.h

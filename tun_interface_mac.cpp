@@ -91,39 +91,58 @@ bool TUNInterface::configureClientMode() {
     if (!isOpen.load()) return false;
 
     // 1. Cấu hình IP với peer point-to-point
+    // Chúng ta trỏ 10.8.0.3 đến 10.8.0.1 (VPN Gateway của server)
     std::ostringstream cmd;
     cmd << "ifconfig " << interfaceName << " " << vpnIP
         << " 10.8.0.1 netmask 255.255.255.0 up";
-    if (!executeCommand(cmd.str())) return false;
+    if (!executeCommand(cmd.str())) {
+        std::cout << "[TUN] FAILED to set IP" << std::endl;
+        return false;
+    }
+    std::cout << "[TUN] Set IP " << vpnIP << " -> 10.8.0.1" << std::endl;
 
-    // 2. Thêm route cho toàn bộ subnet VPN
-    std::ostringstream subnetRouteCmd;
-    subnetRouteCmd << "route add -net 10.8.0.0/24 -interface " << interfaceName;
-    executeCommand(subnetRouteCmd.str());
 
-    // 3. **QUAN TRỌNG**: Thêm default route qua VPN
-    // Điều này khiến tất cả traffic đi qua VPN
-    std::ostringstream defaultRouteCmd;
-    defaultRouteCmd << "route add default -interface " << interfaceName;
-    executeCommand(defaultRouteCmd.str());
-
-    // 4. Lưu gateway cũ và thêm route cho server IP
+    // 2. LẤY GATEWAY CŨ VÀ BẢO VỆ ROUTE ĐẾN SERVER (PHẢI LÀM TRƯỚC)
+    // serverIP là IP public của máy chủ AWS/Vultr...
     if (!serverIP.empty()) {
         std::string oldGateway = getDefaultGateway();
         if (!oldGateway.empty()) {
-            // Lưu gateway để restore sau
             std::ostringstream saveCmd;
             saveCmd << "echo " << oldGateway << " > /tmp/vpn_old_gateway";
             executeCommand(saveCmd.str());
 
-            // Route cho server qua gateway cũ (để duy trì kết nối VPN)
+            // Thêm route cho server qua gateway cũ
             std::ostringstream serverRouteCmd;
             serverRouteCmd << "route add -host " << serverIP << " " << oldGateway;
             executeCommand(serverRouteCmd.str());
+            std::cout << "[TUN] Protected route to server " << serverIP << " via " << oldGateway << std::endl;
+        } else {
+            std::cout << "[TUN] WARNING: Could not get old gateway. VPN connection might fail." << std::endl;
         }
+    } else {
+        std::cout << "[TUN] WARNING: Server IP is empty. Cannot protect server route." << std::endl;
     }
 
-    // 5. Cấu hình DNS (optional - giúp resolve domain names)
+    // 3. THÊM ROUTE CHO SUBNET VPN
+    // Đảm bảo traffic đến 10.8.0.0/24 đi qua utun
+    std::ostringstream subnetRouteCmd;
+    subnetRouteCmd << "route add -net 10.8.0.0/24 -interface " << interfaceName;
+    executeCommand(subnetRouteCmd.str());
+
+    // 4. THAY ĐỔI DEFAULT ROUTE (LÀM SAU CÙNG)
+    executeCommand("route delete default"); // Xóa default cũ
+    std::ostringstream defaultRouteCmd;
+    defaultRouteCmd << "route add default -interface " << interfaceName;
+    if (!executeCommand(defaultRouteCmd.str())) {
+        std::cout << "[TUN] FAILED to set default route" << std::endl;
+        // Thử thêm lại gateway cũ nếu thất bại
+        std::string oldGateway = getDefaultGateway();
+        if(!oldGateway.empty()) executeCommand("route add default " + oldGateway);
+        return false;
+    }
+    std::cout << "[TUN] Set default route via " << interfaceName << std::endl;
+
+    // 5. Cấu hình DNS (optional)
     executeCommand("networksetup -setdnsservers Wi-Fi 8.8.8.8 8.8.4.4");
 
     std::cout << "[INFO] Client mode configured with default route via VPN\n";
