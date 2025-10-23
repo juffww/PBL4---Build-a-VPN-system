@@ -64,6 +64,17 @@ private:
     
     std::string getCurrentTime();
 
+    // === CRYPTO ===
+    struct ClientCrypto {
+        std::vector<uint8_t> sharedKey;      // AES-256 key
+        std::string serverPublicKey;          // Server's public key
+        uint64_t txCounter;                   // Nonce counter (TX)
+        uint64_t rxCounter;                   // Nonce counter (RX)
+        bool ready;
+    };
+    std::map<int, ClientCrypto> cryptoMap;
+    std::mutex cryptoMutex;
+
 public:
     ClientManager();
     ~ClientManager();
@@ -96,6 +107,14 @@ public:
     
     void cleanup();
     std::vector<std::string> getClientStats();
+
+    // Crypto functions
+    bool setupCrypto(int clientId, const std::string& clientPubKey);
+    std::string getServerPublicKey(int clientId);
+    bool encryptPacket(int clientId, const char* plain, int plainSize, 
+                      std::vector<uint8_t>& encrypted);
+    bool decryptPacket(int clientId, const char* encrypted, int encSize,
+                      std::vector<uint8_t>& plain);
 };
 
 #endif 

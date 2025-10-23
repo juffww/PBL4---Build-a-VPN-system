@@ -182,13 +182,19 @@ void VPNServer::handleUDPPackets() {
                 }
                 
                 if (dataSize > 0 && dataSize <= (n - 8) && dataSize < 65536) {
-                    {
-                        std::lock_guard<std::mutex> lock(udpAddrMutex);
-                        clientUDPAddrs[clientId] = clientAddr;
-                    }
+                    std::lock_guard<std::mutex> lock(udpAddrMutex);
+                    clientUDPAddrs[clientId] = clientAddr;
                     
-                    if (clientManager) {
-                        clientManager->handleClientPacket(clientId, buffer + 8, dataSize);
+                    std::vector<uint8_t> plainPacket;
+                    if (clientManager->decryptPacket(clientId, buffer + 8, dataSize, plainPacket)) {
+                        clientManager->handleClientPacket(clientId, 
+                            (char*)plainPacket.data(), plainPacket.size());
+                    } else {
+                        static int decryptFailCount = 0;
+                        if (++decryptFailCount % 100 == 0) {
+                            std::cerr << "[SECURITY] Rejected " << decryptFailCount 
+                                    << " tampered packets\n";
+                        }
                     }
                 }
             }
@@ -262,27 +268,25 @@ void VPNServer::handleClient(int clientId) {
                     packetSizeToRead = 0;
                     processedData = true; 
                 }
-            } else {
-                size_t pos = messageBuffer.find('\n');
+            } else if (messageBuffer.rfind("CRYPTO_INIT|", 0) == 0) {
+                if (!clientManager->isClientAuthenticated(clientId)) {
+                    clientManager->sendToClient(clientId, "ERROR|Not authenticated\n");
+                    continue;
+                }
+                
+                // Parse: CRYPTO_INIT|<client_public_key_base64>
+                size_t pos = messageBuffer.find('|');
                 if (pos != std::string::npos) {
-                    std::string message = messageBuffer.substr(0, pos);
-                    messageBuffer.erase(0, pos + 1);
-
-                    if (message.rfind("PACKET_DATA|", 0) == 0) {
-                        if (clientManager->isClientAuthenticated(clientId)) {
-                            try {
-                                packetSizeToRead = std::stoi(message.substr(12));
-                                if (packetSizeToRead > 0 && packetSizeToRead < 4096) {
-                                    expectingPacketData = true;
-                                }
-                            } catch (const std::exception&) { }
-                        }
+                    std::string clientPubKey = messageBuffer.substr(pos + 1);
+                    
+                    if (clientManager->setupCrypto(clientId, clientPubKey)) {
+                        std::string serverPubKey = clientManager->getServerPublicKey(clientId);
+                        clientManager->sendToClient(clientId, 
+                            "CRYPTO_OK|" + serverPubKey + "\n");
+                        std::cout << "[CRYPTO] Handshake complete with client " << clientId << "\n";
                     } else {
-                        if (!processClientMessage(clientId, message)) {
-                            goto end_loop;
-                        }
+                        clientManager->sendToClient(clientId, "CRYPTO_FAIL|Setup failed\n");
                     }
-                    processedData = true; 
                 }
             }
         }
@@ -494,73 +498,4 @@ std::vector<std::string> VPNServer::getAllAssignedVPNIPs() const {
 
 TUNInterface* VPNServer::getTUNInterface() const {
     return tunnelManager ? tunnelManager->getTUNInterface() : nullptr;
-}
-
-std::vector<std::string> VPNServer::getPacketStats() {
-    std::vector<std::string> stats;
-    
-    if (packetHandler) {
-        PacketStats pStats = packetHandler->getPacketStats();
-        stats.push_back("Packet Processing Statistics:");
-        stats.push_back("============================");
-        stats.push_back("Total Packets Processed: " + std::to_string(pStats.totalPackets));
-        stats.push_back("Total Bytes Processed: " + std::to_string(pStats.totalBytes));
-        stats.push_back("");
-        stats.push_back("Traffic Distribution:");
-        stats.push_back("  To Clients: " + std::to_string(pStats.packetsToClients) + 
-                        " packets (" + std::to_string(pStats.bytesToClients) + " bytes)");
-        stats.push_back("  From Clients: " + std::to_string(pStats.packetsFromClients) + 
-                        " packets (" + std::to_string(pStats.bytesFromClients) + " bytes)");
-        stats.push_back("  To Internet: " + std::to_string(pStats.packetsToInternet) + 
-                        " packets (" + std::to_string(pStats.bytesToInternet) + " bytes)");
-        
-        if (pStats.totalPackets > 0) {
-            stats.push_back("");
-            stats.push_back("Percentage Distribution:");
-            stats.push_back("  To Clients: " + 
-                          std::to_string((pStats.packetsToClients * 100) / pStats.totalPackets) + "%");
-            stats.push_back("  From Clients: " + 
-                          std::to_string((pStats.packetsFromClients * 100) / pStats.totalPackets) + "%");  
-            stats.push_back("  To Internet: " + 
-                          std::to_string((pStats.packetsToInternet * 100) / pStats.totalPackets) + "%");
-        }
-    } else {
-        stats.push_back("Packet handler not available");
-    }
-    
-    return stats;
-}
-
-std::vector<std::string> VPNServer::getVPNStats() {
-    std::vector<std::string> stats;
-    stats.push_back("VPN Server Statistics:");
-    stats.push_back("======================");
-    stats.push_back("Server VPN IP: 10.8.0.1/24");
-    
-    if (clientManager) {
-        stats.push_back("Available IPs: " + std::to_string(clientManager->getAvailableIPs()));
-        
-        auto assignedIPs = clientManager->getAllAssignedVPNIPs();
-        stats.push_back("Assigned IPs: " + std::to_string(assignedIPs.size()));
-        
-        if (!assignedIPs.empty()) {
-            stats.push_back("Assigned IP List:");
-            for (const auto& ip : assignedIPs) {
-                stats.push_back("  - " + ip);
-            }
-        }
-        
-        stats.push_back("Connected Clients: " + std::to_string(clientManager->getClientCount()));
-    }
-    
-    if (tunnelManager) {
-        TUNInterface* tun = tunnelManager->getTUNInterface();
-        if (tun) {
-            stats.push_back("TUN Interface: " + tun->getName());
-            stats.push_back("TUN Bytes Received: " + std::to_string(tun->getBytesReceived()));
-            stats.push_back("TUN Bytes Sent: " + std::to_string(tun->getBytesSent()));
-        }
-    }
-    
-    return stats;
 }

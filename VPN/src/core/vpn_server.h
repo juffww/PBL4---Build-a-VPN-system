@@ -102,10 +102,6 @@ public:
     // UDP access for PacketHandler
     SOCKET getUDPSocket() const { return udpSocket; }
     bool getClientUDPAddr(int clientId, struct sockaddr_in& addr);
-    
-    // Statistics
-    std::vector<std::string> getVPNStats();
-    std::vector<std::string> getPacketStats();
 };
 
 #endif

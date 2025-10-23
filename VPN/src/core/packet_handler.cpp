@@ -113,47 +113,53 @@ void PacketHandler::forwardPacketToClient(const char* packet, int size, const st
         return;
     }
     
-    // ===== STRATEGY 1: UDP ONLY (Recommended) =====
-    // Chỉ dùng UDP, bỏ qua nếu thất bại
+    // Get client UDP address
     struct sockaddr_in clientAddr;
-    if (vpnServer->getClientUDPAddr(clientId, clientAddr)) {
-        char buffer[8192];
-        
-        if (static_cast<size_t>(size + 8) > sizeof(buffer)){
-            return;
-        }
-        
-        *(int*)buffer = clientId;
-        *(int*)(buffer + 4) = size;
-        memcpy(buffer + 8, packet, size);
-        
-        int totalSize = size + 8;
-        int sent = sendto(vpnServer->getUDPSocket(), buffer, totalSize, 0,
-                         (struct sockaddr*)&clientAddr, sizeof(clientAddr));
-        
-        if (sent == totalSize) {
-            clientManager->updateClientStats(clientId, size, 0);
-            return;
-        }
-        
-        // OPTIMIZATION: Không fallback TCP, chỉ log lỗi (silent)
-        // UDP packet loss là bình thường, TCP sẽ retransmit ở tầng trên
-        static int udpFailCount = 0;
-        if (++udpFailCount % 1000 == 0) {
-            std::cerr << "[WARN] UDP send failures: " << udpFailCount << std::endl;
+    if (!vpnServer->getClientUDPAddr(clientId, clientAddr)) {
+        return; // UDP not ready yet
+    }
+    
+    // === CRYPTO: Encrypt packet before sending ===
+    std::vector<uint8_t> encryptedPacket;
+    if (!clientManager->encryptPacket(clientId, packet, size, encryptedPacket)) {
+        static int cryptoFailCount = 0;
+        if (++cryptoFailCount % 100 == 0) {
+            std::cerr << "[WARN] Encryption failures: " << cryptoFailCount << std::endl;
         }
         return;
     }
     
-    // ===== STRATEGY 2: TCP CHỈ KHI UDP CHƯA READY =====
-    // Chỉ dùng TCP trong giai đoạn handshake/setup
-    // Sau khi UDP ready, bỏ qua TCP hoàn toàn
+    // === Send encrypted packet: [ClientID:4][Size:4][EncryptedData] ===
+    char buffer[8192];
+    size_t encryptedSize = encryptedPacket.size();
     
-    // KHÔNG NÊN có code TCP fallback ở đây nữa!
-    // Lý do:
-    // - UDP packet loss < 1% là chấp nhận được
-    // - TCP retransmission sẽ xử lý ở tầng application
-    // - Giảm complexity và latency
+    if (encryptedSize + 8 > sizeof(buffer)) {
+        std::cerr << "[ERROR] Encrypted packet too large: " << encryptedSize << std::endl;
+        return;
+    }
+    
+    // Pack header
+    *(int*)buffer = clientId;
+    *(int*)(buffer + 4) = static_cast<int>(encryptedSize);
+    memcpy(buffer + 8, encryptedPacket.data(), encryptedSize);
+    
+    int totalSize = encryptedSize + 8;
+    
+    // Send via UDP
+    int sent = sendto(vpnServer->getUDPSocket(), buffer, totalSize, 0,
+                     (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+    
+    if (sent == totalSize) {
+        // Update stats with ORIGINAL size (before encryption)
+        clientManager->updateClientStats(clientId, size, 0);
+        return;
+    }
+    
+    // UDP send failure (silent - normal in UDP)
+    static int udpFailCount = 0;
+    if (++udpFailCount % 1000 == 0) {
+        std::cerr << "[WARN] UDP send failures: " << udpFailCount << std::endl;
+    }
 }
 
 std::string PacketHandler::getProtocolName(uint8_t protocol) {

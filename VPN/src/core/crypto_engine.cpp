@@ -5,7 +5,7 @@
 #include <openssl/pem.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
-#include <openssl/core_names.h>  // ĐỂ DÙNG OSSL_KDF_PARAM_*
+#include <openssl/core_names.h>  
 #include <string>
 #include <vector>
 #include <iostream>

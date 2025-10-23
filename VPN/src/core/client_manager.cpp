@@ -1,5 +1,6 @@
 #include "client_manager.h"
 #include "packet_handler.h"
+#include "crypto_engine.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -335,4 +336,86 @@ std::vector<std::string> ClientManager::getClientStats() {
     stats.push_back("Assigned VPN IPs: " + std::to_string(assignedIPs));
     
     return stats;
+}
+
+// THÊM VÀO CUỐI FILE (sau hàm getClientStats):
+
+bool ClientManager::setupCrypto(int clientId, const std::string& clientPubKey) {
+    std::lock_guard<std::mutex> lock(cryptoMutex);
+    
+    ClientCrypto crypto;
+    std::string privKey;
+    
+    // Generate server keypair
+    if (!CryptoEngine::GenerateKeyPair(privKey, crypto.serverPublicKey)) {
+        std::cerr << "[CRYPTO] Keygen failed for client " << clientId << "\n";
+        return false;
+    }
+    
+    // Derive shared secret
+    if (!CryptoEngine::DeriveSharedSecret(privKey, clientPubKey, crypto.sharedKey)) {
+        std::cerr << "[CRYPTO] Key derivation failed for client " << clientId << "\n";
+        return false;
+    }
+    
+    crypto.txCounter = 0;
+    crypto.rxCounter = 0;
+    crypto.ready = true;
+    
+    cryptoMap[clientId] = crypto;
+    std::cout << "[CRYPTO] ✓ Setup complete for client " << clientId << "\n";
+    
+    return true;
+}
+
+std::string ClientManager::getServerPublicKey(int clientId) {
+    std::lock_guard<std::mutex> lock(cryptoMutex);
+    auto it = cryptoMap.find(clientId);
+    return (it != cryptoMap.end()) ? it->second.serverPublicKey : "";
+}
+
+bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize,
+                                  std::vector<uint8_t>& encrypted) {
+    std::lock_guard<std::mutex> lock(cryptoMutex);
+    auto it = cryptoMap.find(clientId);
+    if (it == cryptoMap.end() || !it->second.ready) return false;
+    
+    // Generate IV from counter (12 bytes)
+    std::vector<uint8_t> iv(12);
+    uint64_t counter = it->second.txCounter++;
+    memcpy(iv.data(), &counter, 8);
+    
+    std::vector<uint8_t> plainVec(plain, plain + plainSize);
+    std::vector<uint8_t> ciphertext, tag;
+    
+    if (!CryptoEngine::Encrypt(it->second.sharedKey, iv, plainVec, ciphertext, tag)) {
+        return false;
+    }
+    
+    // Format: [IV:12][Tag:16][Ciphertext:N]
+    encrypted.resize(28 + ciphertext.size());
+    memcpy(encrypted.data(), iv.data(), 12);
+    memcpy(encrypted.data() + 12, tag.data(), 16);
+    memcpy(encrypted.data() + 28, ciphertext.data(), ciphertext.size());
+    
+    return true;
+}
+
+bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSize,
+                                  std::vector<uint8_t>& plain) {
+    std::lock_guard<std::mutex> lock(cryptoMutex);
+    auto it = cryptoMap.find(clientId);
+    if (it == cryptoMap.end() || !it->second.ready || encSize < 28) return false;
+    
+    // Extract: [IV:12][Tag:16][Ciphertext:N]
+    std::vector<uint8_t> iv(encrypted, encrypted + 12);
+    std::vector<uint8_t> tag(encrypted + 12, encrypted + 28);
+    std::vector<uint8_t> ciphertext(encrypted + 28, encrypted + encSize);
+    
+    if (!CryptoEngine::Decrypt(it->second.sharedKey, iv, ciphertext, tag, plain)) {
+        std::cerr << "[CRYPTO] Decryption failed for client " << clientId << "\n";
+        return false;
+    }
+    
+    return true;
 }
