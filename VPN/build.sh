@@ -79,9 +79,11 @@ g++ -std=c++17 -pthread -O3 -march=native -flto \
     src/core/client_manager.cpp \
     src/core/packet_handler.cpp \
     src/core/tunnel_manager.cpp \
+    src/core/crypto_engine.cpp \
     src/network/tun_interface.cpp \
     src/network/socket_manager.cpp \
-    -I./src
+    -I./src -I./src/core \
+    -lssl -lcrypto
 
 if [ $? -eq 0 ]; then
     echo "✓ Compile thành công với optimization"
