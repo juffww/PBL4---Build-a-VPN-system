@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include <cstdint> // Để dùng uint8_t
+#include <cstdint>
 
 /**
  * @class CryptoEngine
@@ -16,6 +16,11 @@
  */
 class CryptoEngine {
 public:
+    // Các hằng số kích thước
+    static constexpr int AES_KEY_SIZE = 32;   // 256 bits
+    static constexpr int AES_IV_SIZE = 12;    // 96 bits (GCM standard)
+    static constexpr int GCM_TAG_SIZE = 16;   // 128 bits
+
     /**
      * @brief Tạo một cặp khóa X25519 mới (private/public).
      *
@@ -43,8 +48,8 @@ public:
      * @return true nếu tạo khóa chung thành công.
      */
     static bool DeriveSharedSecret(const std::string& private_key_pem,
-                                 const std::string& public_key_pem,
-                                 std::vector<uint8_t>& shared_key);
+                                    const std::string& public_key_pem,
+                                    std::vector<uint8_t>& shared_key);
 
     /**
      * @brief Tạo một IV (Initialization Vector) / Nonce ngẫu nhiên (12 bytes).
