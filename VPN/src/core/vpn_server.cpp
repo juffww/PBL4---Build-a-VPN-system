@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <thread>
 #include <chrono>
+#include <unordered_map> 
 #include "client_manager.h" 
 #include "tunnel_manager.h"
 #include "packet_handler.h"
@@ -18,6 +19,7 @@
     #include <unistd.h>
     #include <sys/socket.h>
     #include <netinet/in.h>
+    #include <netinet/tcp.h> 
     #include <errno.h>
 #endif
 
@@ -150,6 +152,7 @@ void VPNServer::handleUDPPackets() {
     
     int rcvbuf = 2097152; 
     int sndbuf = 2097152; 
+
     setsockopt(udpSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvbuf, sizeof(rcvbuf));
     setsockopt(udpSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&sndbuf, sizeof(sndbuf));
     
@@ -236,9 +239,221 @@ void VPNServer::acceptConnections() {
     }
 }
 
+// void VPNServer::handleClient(int clientId) {
+//     ClientInfo* client = clientManager->getClientInfo(clientId);
+//     if (!client) return;
+
+//     int flag = 1;
+//     setsockopt(client->socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+
+//     char buffer[4096];
+//     std::string welcomeMsg = "WELCOME|VPN Server 2.0.0|Ready for authentication\n";
+//     clientManager->sendToClient(clientId, welcomeMsg);
+
+//     std::string messageBuffer;
+//     bool expectingPacketData = false;
+//     int packetSizeToRead = 0;
+    
+//     // Rate limiting trackers
+//     static std::unordered_map<int, std::chrono::steady_clock::time_point> lastCryptoInit;
+//     static std::unordered_map<int, int> cryptoAttempts;
+//     static std::mutex rateLimitMutex;
+
+//     while (!shouldStop && client->socket != INVALID_SOCKET) {
+//         int bytesReceived = recv(client->socket, buffer, sizeof(buffer), 0);
+//         if (bytesReceived <= 0) break;
+
+//         messageBuffer.append(buffer, bytesReceived);
+        
+//         // ✅ Wait 10ms for more data (fix multiline commands)
+//         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+//         // ✅ Buffer overflow protection
+//         if (messageBuffer.size() > 65536) {
+//             std::cerr << "[SECURITY] Client " << clientId << " buffer overflow detected\n";
+//             break;
+//         }
+
+//         while(true) {
+//             if (expectingPacketData) {
+//                 if (messageBuffer.length() >= static_cast<size_t>(packetSizeToRead)){
+//                     clientManager->handleClientPacket(clientId, messageBuffer.data(), packetSizeToRead);
+//                     messageBuffer.erase(0, packetSizeToRead);
+//                     expectingPacketData = false;
+//                     packetSizeToRead = 0;
+//                 } else {
+//                     break;
+//                 }
+//             }
+//             else {
+//                 size_t newline = messageBuffer.find('\n');
+//                 if (newline == std::string::npos) break;
+
+//                 std::string line = messageBuffer.substr(0, newline);
+//                 messageBuffer.erase(0, newline + 1);
+
+//                 // AUTH command
+//                 if (line.rfind("AUTH ", 0) == 0) {
+//                     std::istringstream iss(line);
+//                     std::string cmd, username, password;
+//                     iss >> cmd >> username >> password;
+                    
+//                     if (!handleAuthCommand(clientId, iss)) break;
+//                 }
+//                 // ✅ FIX: CRYPTO_INIT with proper validation
+//                 else if (line.rfind("CRYPTO_INIT|", 0) == 0) {
+//                     // ✅ 1. CHECK AUTHENTICATION FIRST
+//                     if (!clientManager->isClientAuthenticated(clientId)) {
+//                         std::cerr << "[SECURITY] Unauthenticated CRYPTO_INIT from client " 
+//                                   << clientId << "\n";
+//                         clientManager->sendToClient(clientId, "ERROR|Not authenticated\n");
+//                         continue;
+//                     }
+                    
+//                     // ✅ 2. RATE LIMITING
+//                     {
+//                         std::lock_guard<std::mutex> lock(rateLimitMutex);
+//                         auto now = std::chrono::steady_clock::now();
+                        
+//                         if (lastCryptoInit.count(clientId)) {
+//                             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+//                                 now - lastCryptoInit[clientId]).count();
+                            
+//                             if (elapsed < 1000) {
+//                                 cryptoAttempts[clientId]++;
+//                                 if (cryptoAttempts[clientId] > 3) {
+//                                     std::cerr << "[SECURITY] Client " << clientId 
+//                                              << " exceeded crypto rate limit\n";
+//                                     clientManager->sendToClient(clientId, "ERROR|Rate limit\n");
+//                                     continue;
+//                                 }
+//                             } else {
+//                                 cryptoAttempts[clientId] = 0;
+//                             }
+//                         }
+//                         lastCryptoInit[clientId] = now;
+//                     }
+                    
+//                     // ✅ 3. PREVENT RE-INITIALIZATION
+//                     std::string existingKey = clientManager->getServerPublicKey(clientId);
+//                     if (!existingKey.empty()) {
+//                         std::cerr << "[SECURITY] Client " << clientId 
+//                                  << " attempted crypto re-init\n";
+//                         clientManager->sendToClient(clientId, "ERROR|Already initialized\n");
+//                         continue;
+//                     }
+                    
+//                     // ✅ 4. PARSE KEY - CHỜ ĐỌC MULTI-LINE PEM
+//                     std::string clientPubKey;
+//                     size_t pos = line.find('|');
+//                     if (pos != std::string::npos && pos + 1 < line.length()) {
+//                         clientPubKey = line.substr(pos + 1);
+                        
+//                         // ✅ Đọc thêm các dòng PEM còn lại
+//                         while (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
+//                             if (messageBuffer.find('\n') == std::string::npos) {
+//                                 // Chờ thêm data
+//                                 break;
+//                             }
+//                             size_t nextNewline = messageBuffer.find('\n');
+//                             std::string nextLine = messageBuffer.substr(0, nextNewline);
+//                             messageBuffer.erase(0, nextNewline + 1);
+                            
+//                             clientPubKey += "\n" + nextLine;
+                            
+//                             // ✅ Buffer overflow protection
+//                             if (clientPubKey.length() > 2048) {
+//                                 std::cerr << "[SECURITY] PEM key too large\n";
+//                                 clientManager->sendToClient(clientId, "CRYPTO_FAIL|Key too large\n");
+//                                 goto cleanup;
+//                             }
+//                         }
+                        
+//                         if (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
+//                             messageBuffer = "CRYPTO_INIT|" + clientPubKey + "\n" + messageBuffer;
+//                             break;
+//                         }
+//                     } else {
+//                         std::cerr << "[SECURITY] Client " << clientId << " invalid format\n";
+//                         clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid format\n");
+//                         continue;
+//                     }
+                    
+//                     // ✅ 5. VALIDATE KEY FORMAT
+//                     if (clientPubKey.find("-----BEGIN PUBLIC KEY-----") == std::string::npos ||
+//                         clientPubKey.find("-----END PUBLIC KEY-----") == std::string::npos) {
+//                         std::cerr << "[SECURITY] Client " << clientId << " incomplete PEM\n";
+//                         clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid key\n");
+//                         continue;
+//                     }
+                    
+//                     // ✅ 6. SETUP CRYPTO
+//                     if (clientManager->setupCrypto(clientId, clientPubKey)) {
+//                         std::string serverPubKey = clientManager->getServerPublicKey(clientId);
+                        
+//                         // ✅ FIX: Send response IMMEDIATELY, không chờ
+//                         std::string response = "CRYPTO_OK|" + serverPubKey + "\n";
+//                         send(client->socket, response.c_str(), response.length(), MSG_NOSIGNAL);
+                        
+//                         std::cout << "[CRYPTO] ✓ Handshake complete with client " << clientId << "\n";
+//                     } else {
+//                         std::cerr << "[SECURITY] Client " << clientId << " crypto setup failed\n";
+                        
+//                         // ✅ FIX: Send error response IMMEDIATELY
+//                         std::string errorMsg = "CRYPTO_FAIL|Setup failed\n";
+//                         send(client->socket, errorMsg.c_str(), errorMsg.length(), MSG_NOSIGNAL);
+//                     }
+//                 }
+//                 // Other commands
+//                 else if (line.rfind("PING", 0) == 0) {
+//                     handlePingCommand(clientId);
+//                 }
+//                 else if (line.rfind("GET_STATUS", 0) == 0) {
+//                     handleStatusCommand(clientId);
+//                 }
+//                 else if (line.rfind("DISCONNECT", 0) == 0) {
+//                     clientManager->sendToClient(clientId, "BYE|Goodbye\n");
+//                     goto cleanup;
+//                 }
+//                 else if (line.rfind("DATA|", 0) == 0) {
+//                     size_t pos = line.find('|');
+//                     if (pos != std::string::npos) {
+//                         std::string sizeStr = line.substr(pos + 1);
+//                         try {
+//                             packetSizeToRead = std::stoi(sizeStr);
+//                             if (packetSizeToRead > 0 && packetSizeToRead <= 2048) {
+//                                 expectingPacketData = true;
+//                             } else {
+//                                 std::cerr << "[SECURITY] Invalid packet size: " 
+//                                          << packetSizeToRead << "\n";
+//                             }
+//                         } catch (...) {
+//                             std::cerr << "[SECURITY] Invalid DATA command\n";
+//                         }
+//                     }
+//                 }
+//                 else {
+//                     if (!clientManager->isClientAuthenticated(clientId)) {
+//                         clientManager->sendToClient(clientId, "ERROR|Please authenticate first\n");
+//                     } else {
+//                         clientManager->sendToClient(clientId, "ERROR|Unknown command\n");
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+// cleanup:
+//     clientManager->removeClient(clientId);
+// }
+// In handleClient(), fix the message buffer processing:
+
 void VPNServer::handleClient(int clientId) {
     ClientInfo* client = clientManager->getClientInfo(clientId);
     if (!client) return;
+
+    int flag = 1;
+    setsockopt(client->socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
     char buffer[4096];
     std::string welcomeMsg = "WELCOME|VPN Server 2.0.0|Ready for authentication\n";
@@ -247,52 +462,205 @@ void VPNServer::handleClient(int clientId) {
     std::string messageBuffer;
     bool expectingPacketData = false;
     int packetSizeToRead = 0;
+    
+    // Rate limiting trackers
+    static std::unordered_map<int, std::chrono::steady_clock::time_point> lastCryptoInit;
+    static std::unordered_map<int, int> cryptoAttempts;
+    static std::mutex rateLimitMutex;
+
+    std::cout << "[CLIENT] " << clientId << " connected from " 
+              << client->realIP << ":" << client->port << "\n";  // ✅ ADD LOGGING
 
     while (!shouldStop && client->socket != INVALID_SOCKET) {
         int bytesReceived = recv(client->socket, buffer, sizeof(buffer), 0);
         if (bytesReceived <= 0) {
+            std::cout << "[CLIENT] " << clientId << " disconnected\n";  // ✅ ADD LOGGING
             break;
         }
 
         messageBuffer.append(buffer, bytesReceived);
+        
+        // ❌ REMOVE THIS - it slows down response and test timeout
+        // std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-        bool processedData = true;
-        while(processedData) {
-            processedData = false;
+        // ✅ Buffer overflow protection
+        if (messageBuffer.size() > 65536) {
+            std::cerr << "[SECURITY] Client " << clientId << " buffer overflow detected\n";
+            break;
+        }
+
+        while(true) {
             if (expectingPacketData) {
                 if (messageBuffer.length() >= static_cast<size_t>(packetSizeToRead)){
                     clientManager->handleClientPacket(clientId, messageBuffer.data(), packetSizeToRead);
-
                     messageBuffer.erase(0, packetSizeToRead);
                     expectingPacketData = false;
                     packetSizeToRead = 0;
-                    processedData = true; 
+                } else {
+                    break;
                 }
-            } else if (messageBuffer.rfind("CRYPTO_INIT|", 0) == 0) {
-                if (!clientManager->isClientAuthenticated(clientId)) {
-                    clientManager->sendToClient(clientId, "ERROR|Not authenticated\n");
-                    continue;
-                }
-                
-                // Parse: CRYPTO_INIT|<client_public_key_base64>
-                size_t pos = messageBuffer.find('|');
-                if (pos != std::string::npos) {
-                    std::string clientPubKey = messageBuffer.substr(pos + 1);
+            }
+            else {
+                size_t newline = messageBuffer.find('\n');
+                if (newline == std::string::npos) break;
+
+                std::string line = messageBuffer.substr(0, newline);
+                messageBuffer.erase(0, newline + 1);
+
+                // ✅ ADD LOGGING for all commands
+                std::cout << "[CMD] Client " << clientId << ": " << line.substr(0, 50) 
+                         << (line.length() > 50 ? "..." : "") << "\n";
+
+                // AUTH command
+                if (line.rfind("AUTH ", 0) == 0) {
+                    std::istringstream iss(line);
+                    std::string cmd, username, password;
+                    iss >> cmd >> username >> password;
                     
+                    if (!handleAuthCommand(clientId, iss)) break;
+                }
+                // ✅ CRYPTO_INIT with proper validation
+                else if (line.rfind("CRYPTO_INIT|", 0) == 0) {
+                    // ✅ 1. CHECK AUTHENTICATION FIRST
+                    if (!clientManager->isClientAuthenticated(clientId)) {
+                        std::cerr << "[SECURITY] Unauthenticated CRYPTO_INIT from client " 
+                                  << clientId << "\n";
+                        clientManager->sendToClient(clientId, "ERROR|Not authenticated\n");
+                        continue;  // ✅ Don't break, just skip
+                    }
+                    
+                    // ✅ 2. RATE LIMITING
+                    {
+                        std::lock_guard<std::mutex> lock(rateLimitMutex);
+                        auto now = std::chrono::steady_clock::now();
+                        
+                        if (lastCryptoInit.count(clientId)) {
+                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                now - lastCryptoInit[clientId]).count();
+                            
+                            if (elapsed < 1000) {
+                                cryptoAttempts[clientId]++;
+                                if (cryptoAttempts[clientId] > 3) {
+                                    std::cerr << "[SECURITY] Client " << clientId 
+                                             << " exceeded crypto rate limit\n";
+                                    clientManager->sendToClient(clientId, "ERROR|Rate limit\n");
+                                    continue;  // ✅ Don't break
+                                }
+                            } else {
+                                cryptoAttempts[clientId] = 0;
+                            }
+                        }
+                        lastCryptoInit[clientId] = now;
+                    }
+                    
+                    // ✅ 3. PREVENT RE-INITIALIZATION
+                    std::string existingKey = clientManager->getServerPublicKey(clientId);
+                    if (!existingKey.empty()) {
+                        std::cerr << "[SECURITY] Client " << clientId 
+                                 << " attempted crypto re-init\n";
+                        clientManager->sendToClient(clientId, "ERROR|Already initialized\n");
+                        continue;  // ✅ Don't break
+                    }
+                    
+                    // ✅ 4. PARSE KEY - Wait for complete multi-line PEM
+                    std::string clientPubKey;
+                    size_t pos = line.find('|');
+                    if (pos != std::string::npos && pos + 1 < line.length()) {
+                        clientPubKey = line.substr(pos + 1);
+                        
+                        // ✅ Read remaining PEM lines
+                        while (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
+                            if (messageBuffer.find('\n') == std::string::npos) {
+                                // Wait for more data
+                                break;
+                            }
+                            size_t nextNewline = messageBuffer.find('\n');
+                            std::string nextLine = messageBuffer.substr(0, nextNewline);
+                            messageBuffer.erase(0, nextNewline + 1);
+                            
+                            clientPubKey += "\n" + nextLine;
+                            
+                            // ✅ Buffer overflow protection
+                            if (clientPubKey.length() > 2048) {
+                                std::cerr << "[SECURITY] PEM key too large\n";
+                                clientManager->sendToClient(clientId, "CRYPTO_FAIL|Key too large\n");
+                                goto next_command;  // ✅ Skip to next command
+                            }
+                        }
+                        
+                        if (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
+                            // Put back incomplete command
+                            messageBuffer = "CRYPTO_INIT|" + clientPubKey + "\n" + messageBuffer;
+                            break;
+                        }
+                    } else {
+                        std::cerr << "[SECURITY] Client " << clientId << " invalid format\n";
+                        clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid format\n");
+                        continue;  // ✅ Don't break
+                    }
+                    
+                    // ✅ 5. VALIDATE KEY FORMAT
+                    if (clientPubKey.find("-----BEGIN PUBLIC KEY-----") == std::string::npos ||
+                        clientPubKey.find("-----END PUBLIC KEY-----") == std::string::npos) {
+                        std::cerr << "[SECURITY] Client " << clientId << " incomplete PEM\n";
+                        clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid key\n");
+                        continue;  // ✅ Don't break
+                    }
+                    
+                    // ✅ 6. SETUP CRYPTO
                     if (clientManager->setupCrypto(clientId, clientPubKey)) {
                         std::string serverPubKey = clientManager->getServerPublicKey(clientId);
-                        clientManager->sendToClient(clientId, 
-                            "CRYPTO_OK|" + serverPubKey + "\n");
-                        std::cout << "[CRYPTO] Handshake complete with client " << clientId << "\n";
+                        std::string response = "CRYPTO_OK|" + serverPubKey + "\n";
+                        send(client->socket, response.c_str(), response.length(), MSG_NOSIGNAL);
+                        std::cout << "[CRYPTO] ✓ Handshake complete with client " << clientId << "\n";
                     } else {
-                        clientManager->sendToClient(clientId, "CRYPTO_FAIL|Setup failed\n");
+                        std::cerr << "[SECURITY] Client " << clientId << " crypto setup failed\n";
+                        std::string errorMsg = "CRYPTO_FAIL|Setup failed\n";
+                        send(client->socket, errorMsg.c_str(), errorMsg.length(), MSG_NOSIGNAL);
+                    }
+                    
+                    next_command:;  // ✅ Label for goto
+                }
+                // Other commands
+                else if (line.rfind("PING", 0) == 0) {
+                    handlePingCommand(clientId);
+                }
+                else if (line.rfind("GET_STATUS", 0) == 0) {
+                    handleStatusCommand(clientId);
+                }
+                else if (line.rfind("DISCONNECT", 0) == 0) {
+                    clientManager->sendToClient(clientId, "BYE|Goodbye\n");
+                    goto cleanup;
+                }
+                else if (line.rfind("DATA|", 0) == 0) {
+                    size_t pos = line.find('|');
+                    if (pos != std::string::npos) {
+                        std::string sizeStr = line.substr(pos + 1);
+                        try {
+                            packetSizeToRead = std::stoi(sizeStr);
+                            if (packetSizeToRead > 0 && packetSizeToRead <= 2048) {
+                                expectingPacketData = true;
+                            } else {
+                                std::cerr << "[SECURITY] Invalid packet size: " 
+                                         << packetSizeToRead << "\n";
+                            }
+                        } catch (...) {
+                            std::cerr << "[SECURITY] Invalid DATA command\n";
+                        }
+                    }
+                }
+                else {
+                    if (!clientManager->isClientAuthenticated(clientId)) {
+                        clientManager->sendToClient(clientId, "ERROR|Please authenticate first\n");
+                    } else {
+                        clientManager->sendToClient(clientId, "ERROR|Unknown command\n");
                     }
                 }
             }
         }
     }
 
-end_loop:
+cleanup:
     clientManager->removeClient(clientId);
 }
 

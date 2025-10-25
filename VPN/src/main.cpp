@@ -66,7 +66,7 @@ public:
         stop(); 
     }
     
-    void start(int port = 1194) {
+    void start(int port = 5000) {
         if (running) {
             std::cout << "[WARN] Server is already running\n";
             return;
@@ -137,7 +137,7 @@ public:
     
     void printHelp() {
         std::cout << "\n=== VPN SERVER COMMANDS ===\n";
-        std::cout << "start [port]  - Start server (default port 1194)\n";
+        std::cout << "start [port]  - Start server (default port 5000)\n";
         std::cout << "stop          - Stop server\n";
         std::cout << "clients       - List connected clients\n";
         std::cout << "help          - Show help\n";
@@ -269,7 +269,7 @@ int main() {
             
             try {
                 if (cmd == "start") {
-                    int port = 1194;
+                    int port = 5000;
                     if (iss >> port && (port < 1 || port > 65535)) {
                         std::cout << "[ERROR] Port must be between 1-65535\n";
                         continue;

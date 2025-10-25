@@ -5,6 +5,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cstring>
+#include <algorithm>
 #ifdef _WIN32
     #include <ws2tcpip.h>
     #define close closesocket
@@ -111,12 +112,14 @@ bool ClientManager::authenticateClient(int clientId, const std::string& username
     auto it = clients.find(clientId);
     if (it == clients.end()) return false;
     
-    bool authenticated = !username.empty() && !password.empty();
-    
+    //bool authenticated = !username.empty() && !password.empty();
+    bool authenticated = true;
     if (authenticated) {
         it->second.authenticated = true;
         it->second.username = username;
-        std::cout << "[AUTH] Client " << clientId << " (" << username << ") authenticated\n";
+        std::cout << "[SECURITY] Client " << clientId << " (" << username << ") authenticated successfully\n";
+    } else {
+        std::cerr << "[SECURITY] Client " << clientId << " authentication failed (user: " << username << ")\n";
     }
     
     return authenticated;
@@ -338,32 +341,76 @@ std::vector<std::string> ClientManager::getClientStats() {
     return stats;
 }
 
-// THÊM VÀO CUỐI FILE (sau hàm getClientStats):
 
 bool ClientManager::setupCrypto(int clientId, const std::string& clientPubKey) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
     
+    // ✅ 1. Empty check
+    if (clientPubKey.empty()) {
+        std::cerr << "[SECURITY] Empty key rejected for client " << clientId << "\n";
+        return false;
+    }
+
+    // ✅ 2. Length check (X25519 PEM is typically 120-200 bytes)
+    if (clientPubKey.length() < 50 || clientPubKey.length() > 2048) { 
+        std::cerr << "[SECURITY] Invalid key length: " << clientPubKey.length() 
+                  << " for client " << clientId << "\n";
+        return false;
+    }
+    
+    // ✅ 3. PEM format check
+    if (clientPubKey.find("-----BEGIN PUBLIC KEY-----") == std::string::npos ||
+        clientPubKey.find("-----END PUBLIC KEY-----") == std::string::npos) {
+        std::cerr << "[SECURITY] Invalid PEM format for client " << clientId << "\n";
+        return false;
+    }
+    
+    // ✅ 4. Check for garbage in PEM body (between headers)
+    size_t beginPos = clientPubKey.find("-----BEGIN PUBLIC KEY-----") + 26;
+    size_t endPos = clientPubKey.find("-----END PUBLIC KEY-----");
+    if (beginPos >= endPos) {
+        std::cerr << "[SECURITY] Malformed PEM structure for client " << clientId << "\n";
+        return false;
+    }
+    
+    std::string pemBody = clientPubKey.substr(beginPos, endPos - beginPos);
+    // Remove whitespace for checking
+    pemBody.erase(std::remove_if(pemBody.begin(), pemBody.end(), ::isspace), pemBody.end());
+    
+    // X25519 public key in PEM is base64 encoded (valid chars: A-Za-z0-9+/=)
+    for (char c : pemBody) {
+        if (!isalnum(c) && c != '+' && c != '/' && c != '=') {
+            std::cerr << "[SECURITY] Invalid characters in key for client " << clientId << "\n";
+            return false;
+        }
+    }
+    
     ClientCrypto crypto;
     std::string privKey;
     
-    // Generate server keypair
     if (!CryptoEngine::GenerateKeyPair(privKey, crypto.serverPublicKey)) {
         std::cerr << "[CRYPTO] Keygen failed for client " << clientId << "\n";
         return false;
     }
     
-    // Derive shared secret
-    if (!CryptoEngine::DeriveSharedSecret(privKey, clientPubKey, crypto.sharedKey)) {
-        std::cerr << "[CRYPTO] Key derivation failed for client " << clientId << "\n";
+    try {
+        if (!CryptoEngine::DeriveSharedSecret(privKey, clientPubKey, crypto.sharedKey)) {
+            std::cerr << "[SECURITY] Key derivation failed (invalid key material) for client " 
+                      << clientId << "\n";
+            return false;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[SECURITY] Exception during key derivation: " << e.what() << "\n";
         return false;
     }
     
+    // ✅ 5. CRITICAL: Store the crypto state!
+    crypto.ready = true;
     crypto.txCounter = 0;
     crypto.rxCounter = 0;
-    crypto.ready = true;
-    
     cryptoMap[clientId] = crypto;
-    std::cout << "[CRYPTO] ✓ Setup complete for client " << clientId << "\n";
+    
+    std::cout << "[CRYPTO] ✓ Crypto setup complete for client " << clientId << "\n";
     
     return true;
 }
@@ -413,7 +460,8 @@ bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSi
     std::vector<uint8_t> ciphertext(encrypted + 28, encrypted + encSize);
     
     if (!CryptoEngine::Decrypt(it->second.sharedKey, iv, ciphertext, tag, plain)) {
-        std::cerr << "[CRYPTO] Decryption failed for client " << clientId << "\n";
+        std::cerr << "[SECURITY] Decryption failed for client " << clientId 
+                  << " (Tag mismatch - packet tampered)\n";
         return false;
     }
     

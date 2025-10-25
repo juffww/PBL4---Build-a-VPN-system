@@ -75,7 +75,7 @@ private:
     void cleanup();
 
 public:
-    explicit VPNServer(int port = 1194);
+    explicit VPNServer(int port = 5000);
     ~VPNServer();
     
     // Core server operations

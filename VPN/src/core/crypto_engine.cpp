@@ -12,8 +12,6 @@
 
 using namespace std;
 
-// --- Private Helper Functions (không export ra ngoài) ---
-
 static EVP_PKEY* pkey_from_pem(const string& pem, bool is_private) {
     BIO* bio = BIO_new_mem_buf(pem.c_str(), -1);
     if (!bio) {
@@ -31,6 +29,13 @@ static EVP_PKEY* pkey_from_pem(const string& pem, bool is_private) {
     if (!pkey) {
         cerr << "CryptoEngine: Failed to read PEM key" << endl;
         ERR_print_errors_fp(stderr);
+    }
+    else {
+        if (EVP_PKEY_id(pkey) != EVP_PKEY_X25519) {
+            cerr << "CryptoEngine: Key is not X25519 (ID: " << EVP_PKEY_id(pkey) << ")" << endl;
+            EVP_PKEY_free(pkey);
+            pkey = nullptr;
+        } 
     }
 
     BIO_free_all(bio);

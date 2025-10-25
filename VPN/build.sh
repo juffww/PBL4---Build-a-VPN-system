@@ -84,7 +84,9 @@ echo "OpenSSL LIBS: $OPENSSL_LIBS"
 echo "OpenSSL Library Dir: $OPENSSL_LIBDIR"
 echo "Verifying libssl.so: $(ls -la $OPENSSL_LIBDIR/libssl.so 2>/dev/null || echo 'NOT FOUND')"
 
-g++ -std=c++17 -pthread -O2 \
+# g++ -std=c++17 -pthread -O2 \
+g++ -std=c++17 -pthread \
+    -O2 \
     -I./src -I./src/core -I./src/network \
     src/main.cpp \
     src/core/vpn_server.cpp \
@@ -103,9 +105,11 @@ if [ $? -eq 0 ]; then
     echo "✓ Compile thành công với crypto support"
     ls -lh vpn_server
     
-    # Verify OpenSSL linking
+    # Verify OpenSSL linking BEFORE strip
     echo ""
-    echo "=== Verifying Crypto Support ==="
+    echo "=== Verifying Crypto Support (Before Strip) ==="
+    
+    # Check dynamic library linking
     if ldd vpn_server | grep -q "libssl"; then
         echo "✓ libssl linked successfully"
     else
@@ -119,17 +123,24 @@ if [ $? -eq 0 ]; then
         echo "✗ WARNING: libcrypto NOT linked!"
     fi
     
-    # Check for crypto symbols
+    # Check for crypto symbols BEFORE strip
     if nm vpn_server 2>/dev/null | grep -q "CryptoEngine"; then
         echo "✓ CryptoEngine symbols found"
     else
-        echo "⚠ CryptoEngine symbols not found (will check after strip)"
+        echo "✗ CryptoEngine symbols not found!"
     fi
     
-    # Strip symbols for smaller binary
+    if nm vpn_server 2>/dev/null | grep -q "EVP_"; then
+        echo "✓ OpenSSL EVP functions found"
+    else
+        echo "⚠ OpenSSL EVP functions not found (may be optimized out)"
+    fi
+    
+    # THEN strip symbols for smaller binary
     strip vpn_server
     echo "✓ Binary stripped"
     ls -lh vpn_server
+    # ========== KẾT THÚC PHẦN THÊM ==========
 else
     echo "✗ Compile failed"
     exit 1
@@ -163,9 +174,9 @@ fi
 echo ""
 echo "=== Checking Ports ==="
 
-if ss -tuln | grep -q ":1194 "; then
-    echo "⚠ Port 1194 đã được sử dụng"
-    fuser -k 1194/tcp 2>/dev/null
+if ss -tuln | grep -q ":5000 "; then
+    echo "⚠ Port 5000 đã được sử dụng"
+    fuser -k 5000/tcp 2>/dev/null
     sleep 1
 fi
 
