@@ -6,15 +6,20 @@
 #include <algorithm>
 #include <thread>
 #include <chrono>
+#include <openssl/rand.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <unordered_map> 
 #include "client_manager.h" 
 #include "tunnel_manager.h"
 #include "packet_handler.h"
 #ifdef _WIN32
     #include <ws2tcpip.h>
+    
     #define close closesocket
     #define MSG_NOSIGNAL 0
 #else
+    #include <fcntl.h>
     #include <arpa/inet.h>
     #include <unistd.h>
     #include <sys/socket.h>
@@ -23,8 +28,8 @@
     #include <errno.h>
 #endif
 
-VPNServer::VPNServer(int port) 
-    : serverPort(port), serverSocket(INVALID_SOCKET), isRunning(false), 
+VPNServer::VPNServer(int port, const std::string& cert, const std::string& key) 
+    : serverPort(port), certFile(cert), keyFile(key), serverSocket(INVALID_SOCKET), isRunning(false), 
       shouldStop(false), clientManager(nullptr), tunnelManager(nullptr), 
       packetHandler(nullptr) {
 }
@@ -239,278 +244,96 @@ void VPNServer::acceptConnections() {
     }
 }
 
-// void VPNServer::handleClient(int clientId) {
-//     ClientInfo* client = clientManager->getClientInfo(clientId);
-//     if (!client) return;
+void VPNServer::sendTLS(int clientId, const std::string& message) {
+    ClientInfo* client = clientManager->getClientInfo(clientId);
+    if (client && client->tlsWrapper) {
+        client->tlsWrapper->send(message.c_str(), message.length());
+    }
+}
 
-//     int flag = 1;
-//     setsockopt(client->socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-
-//     char buffer[4096];
-//     std::string welcomeMsg = "WELCOME|VPN Server 2.0.0|Ready for authentication\n";
-//     clientManager->sendToClient(clientId, welcomeMsg);
-
-//     std::string messageBuffer;
-//     bool expectingPacketData = false;
-//     int packetSizeToRead = 0;
-    
-//     // Rate limiting trackers
-//     static std::unordered_map<int, std::chrono::steady_clock::time_point> lastCryptoInit;
-//     static std::unordered_map<int, int> cryptoAttempts;
-//     static std::mutex rateLimitMutex;
-
-//     while (!shouldStop && client->socket != INVALID_SOCKET) {
-//         int bytesReceived = recv(client->socket, buffer, sizeof(buffer), 0);
-//         if (bytesReceived <= 0) break;
-
-//         messageBuffer.append(buffer, bytesReceived);
-        
-//         // ✅ Wait 10ms for more data (fix multiline commands)
-//         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-//         // ✅ Buffer overflow protection
-//         if (messageBuffer.size() > 65536) {
-//             std::cerr << "[SECURITY] Client " << clientId << " buffer overflow detected\n";
-//             break;
-//         }
-
-//         while(true) {
-//             if (expectingPacketData) {
-//                 if (messageBuffer.length() >= static_cast<size_t>(packetSizeToRead)){
-//                     clientManager->handleClientPacket(clientId, messageBuffer.data(), packetSizeToRead);
-//                     messageBuffer.erase(0, packetSizeToRead);
-//                     expectingPacketData = false;
-//                     packetSizeToRead = 0;
-//                 } else {
-//                     break;
-//                 }
-//             }
-//             else {
-//                 size_t newline = messageBuffer.find('\n');
-//                 if (newline == std::string::npos) break;
-
-//                 std::string line = messageBuffer.substr(0, newline);
-//                 messageBuffer.erase(0, newline + 1);
-
-//                 // AUTH command
-//                 if (line.rfind("AUTH ", 0) == 0) {
-//                     std::istringstream iss(line);
-//                     std::string cmd, username, password;
-//                     iss >> cmd >> username >> password;
-                    
-//                     if (!handleAuthCommand(clientId, iss)) break;
-//                 }
-//                 // ✅ FIX: CRYPTO_INIT with proper validation
-//                 else if (line.rfind("CRYPTO_INIT|", 0) == 0) {
-//                     // ✅ 1. CHECK AUTHENTICATION FIRST
-//                     if (!clientManager->isClientAuthenticated(clientId)) {
-//                         std::cerr << "[SECURITY] Unauthenticated CRYPTO_INIT from client " 
-//                                   << clientId << "\n";
-//                         clientManager->sendToClient(clientId, "ERROR|Not authenticated\n");
-//                         continue;
-//                     }
-                    
-//                     // ✅ 2. RATE LIMITING
-//                     {
-//                         std::lock_guard<std::mutex> lock(rateLimitMutex);
-//                         auto now = std::chrono::steady_clock::now();
-                        
-//                         if (lastCryptoInit.count(clientId)) {
-//                             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-//                                 now - lastCryptoInit[clientId]).count();
-                            
-//                             if (elapsed < 1000) {
-//                                 cryptoAttempts[clientId]++;
-//                                 if (cryptoAttempts[clientId] > 3) {
-//                                     std::cerr << "[SECURITY] Client " << clientId 
-//                                              << " exceeded crypto rate limit\n";
-//                                     clientManager->sendToClient(clientId, "ERROR|Rate limit\n");
-//                                     continue;
-//                                 }
-//                             } else {
-//                                 cryptoAttempts[clientId] = 0;
-//                             }
-//                         }
-//                         lastCryptoInit[clientId] = now;
-//                     }
-                    
-//                     // ✅ 3. PREVENT RE-INITIALIZATION
-//                     std::string existingKey = clientManager->getServerPublicKey(clientId);
-//                     if (!existingKey.empty()) {
-//                         std::cerr << "[SECURITY] Client " << clientId 
-//                                  << " attempted crypto re-init\n";
-//                         clientManager->sendToClient(clientId, "ERROR|Already initialized\n");
-//                         continue;
-//                     }
-                    
-//                     // ✅ 4. PARSE KEY - CHỜ ĐỌC MULTI-LINE PEM
-//                     std::string clientPubKey;
-//                     size_t pos = line.find('|');
-//                     if (pos != std::string::npos && pos + 1 < line.length()) {
-//                         clientPubKey = line.substr(pos + 1);
-                        
-//                         // ✅ Đọc thêm các dòng PEM còn lại
-//                         while (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
-//                             if (messageBuffer.find('\n') == std::string::npos) {
-//                                 // Chờ thêm data
-//                                 break;
-//                             }
-//                             size_t nextNewline = messageBuffer.find('\n');
-//                             std::string nextLine = messageBuffer.substr(0, nextNewline);
-//                             messageBuffer.erase(0, nextNewline + 1);
-                            
-//                             clientPubKey += "\n" + nextLine;
-                            
-//                             // ✅ Buffer overflow protection
-//                             if (clientPubKey.length() > 2048) {
-//                                 std::cerr << "[SECURITY] PEM key too large\n";
-//                                 clientManager->sendToClient(clientId, "CRYPTO_FAIL|Key too large\n");
-//                                 goto cleanup;
-//                             }
-//                         }
-                        
-//                         if (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
-//                             messageBuffer = "CRYPTO_INIT|" + clientPubKey + "\n" + messageBuffer;
-//                             break;
-//                         }
-//                     } else {
-//                         std::cerr << "[SECURITY] Client " << clientId << " invalid format\n";
-//                         clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid format\n");
-//                         continue;
-//                     }
-                    
-//                     // ✅ 5. VALIDATE KEY FORMAT
-//                     if (clientPubKey.find("-----BEGIN PUBLIC KEY-----") == std::string::npos ||
-//                         clientPubKey.find("-----END PUBLIC KEY-----") == std::string::npos) {
-//                         std::cerr << "[SECURITY] Client " << clientId << " incomplete PEM\n";
-//                         clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid key\n");
-//                         continue;
-//                     }
-                    
-//                     // ✅ 6. SETUP CRYPTO
-//                     if (clientManager->setupCrypto(clientId, clientPubKey)) {
-//                         std::string serverPubKey = clientManager->getServerPublicKey(clientId);
-                        
-//                         // ✅ FIX: Send response IMMEDIATELY, không chờ
-//                         std::string response = "CRYPTO_OK|" + serverPubKey + "\n";
-//                         send(client->socket, response.c_str(), response.length(), MSG_NOSIGNAL);
-                        
-//                         std::cout << "[CRYPTO] ✓ Handshake complete with client " << clientId << "\n";
-//                     } else {
-//                         std::cerr << "[SECURITY] Client " << clientId << " crypto setup failed\n";
-                        
-//                         // ✅ FIX: Send error response IMMEDIATELY
-//                         std::string errorMsg = "CRYPTO_FAIL|Setup failed\n";
-//                         send(client->socket, errorMsg.c_str(), errorMsg.length(), MSG_NOSIGNAL);
-//                     }
-//                 }
-//                 // Other commands
-//                 else if (line.rfind("PING", 0) == 0) {
-//                     handlePingCommand(clientId);
-//                 }
-//                 else if (line.rfind("GET_STATUS", 0) == 0) {
-//                     handleStatusCommand(clientId);
-//                 }
-//                 else if (line.rfind("DISCONNECT", 0) == 0) {
-//                     clientManager->sendToClient(clientId, "BYE|Goodbye\n");
-//                     goto cleanup;
-//                 }
-//                 else if (line.rfind("DATA|", 0) == 0) {
-//                     size_t pos = line.find('|');
-//                     if (pos != std::string::npos) {
-//                         std::string sizeStr = line.substr(pos + 1);
-//                         try {
-//                             packetSizeToRead = std::stoi(sizeStr);
-//                             if (packetSizeToRead > 0 && packetSizeToRead <= 2048) {
-//                                 expectingPacketData = true;
-//                             } else {
-//                                 std::cerr << "[SECURITY] Invalid packet size: " 
-//                                          << packetSizeToRead << "\n";
-//                             }
-//                         } catch (...) {
-//                             std::cerr << "[SECURITY] Invalid DATA command\n";
-//                         }
-//                     }
-//                 }
-//                 else {
-//                     if (!clientManager->isClientAuthenticated(clientId)) {
-//                         clientManager->sendToClient(clientId, "ERROR|Please authenticate first\n");
-//                     } else {
-//                         clientManager->sendToClient(clientId, "ERROR|Unknown command\n");
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-// cleanup:
-//     clientManager->removeClient(clientId);
-// }
-// In handleClient(), fix the message buffer processing:
+// Thay thế hàm handleClient() trong vpn_server.cpp
 
 void VPNServer::handleClient(int clientId) {
     ClientInfo* client = clientManager->getClientInfo(clientId);
     if (!client) return;
 
-    int flag = 1;
-    setsockopt(client->socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+    // ✅ CHỜ SOCKET SẴN SÀNG
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    char buffer[4096];
-    std::string welcomeMsg = "WELCOME|VPN Server 2.0.0|Ready for authentication\n";
-    clientManager->sendToClient(clientId, welcomeMsg);
-
-    std::string messageBuffer;
-    bool expectingPacketData = false;
-    int packetSizeToRead = 0;
+    // ✅ Setup TLS for this client
+    client->tlsWrapper = new TLSWrapper(true); // Server mode
     
-    // Rate limiting trackers
-    static std::unordered_map<int, std::chrono::steady_clock::time_point> lastCryptoInit;
-    static std::unordered_map<int, int> cryptoAttempts;
-    static std::mutex rateLimitMutex;
+    if (!client->tlsWrapper->loadCertificates(certFile, keyFile)) {
+        std::cerr << "[TLS] Failed to load certificates for client " << clientId << "\n";
+        client->tlsWrapper->cleanup();
+        delete client->tlsWrapper;
+        client->tlsWrapper = nullptr;
+        clientManager->removeClient(clientId);
+        return;
+    }
+    
+    std::cout << "[TLS] Starting handshake with client " << clientId 
+              << " (FD: " << client->socket << ")\n";
+    
+    // ✅ CRITICAL: Set socket to blocking mode for handshake
+    #ifndef _WIN32
+    int flags = fcntl(client->socket, F_GETFL, 0);
+    fcntl(client->socket, F_SETFL, flags & ~O_NONBLOCK);
+    #endif
+    
+    if (!client->tlsWrapper->initTLS(client->socket)) {
+        std::cerr << "[TLS] Handshake failed with client " << clientId << "\n";
+        goto cleanup;
+    }
+    
+    std::cout << "[CLIENT] " << clientId << " TLS secured from " 
+              << client->realIP << ":" << client->port << "\n";
 
-    std::cout << "[CLIENT] " << clientId << " connected from " 
-              << client->realIP << ":" << client->port << "\n";  // ✅ ADD LOGGING
-
-    while (!shouldStop && client->socket != INVALID_SOCKET) {
-        int bytesReceived = recv(client->socket, buffer, sizeof(buffer), 0);
-        if (bytesReceived <= 0) {
-            std::cout << "[CLIENT] " << clientId << " disconnected\n";  // ✅ ADD LOGGING
-            break;
+    // Send welcome over TLS
+    {
+        std::string welcomeMsg = "WELCOME|VPN Server 2.0.0 TLS|Ready\n";
+        if (client->tlsWrapper->send(welcomeMsg.c_str(), welcomeMsg.length()) <= 0) {
+            std::cerr << "[TLS] Failed to send welcome message\n";
+            goto cleanup;
         }
+    }
 
-        messageBuffer.append(buffer, bytesReceived);
+    // Main loop - receive over TLS
+    {
+        char buffer[4096];
+        std::string messageBuffer;
         
-        // ❌ REMOVE THIS - it slows down response and test timeout
-        // std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-        // ✅ Buffer overflow protection
-        if (messageBuffer.size() > 65536) {
-            std::cerr << "[SECURITY] Client " << clientId << " buffer overflow detected\n";
-            break;
-        }
-
-        while(true) {
-            if (expectingPacketData) {
-                if (messageBuffer.length() >= static_cast<size_t>(packetSizeToRead)){
-                    clientManager->handleClientPacket(clientId, messageBuffer.data(), packetSizeToRead);
-                    messageBuffer.erase(0, packetSizeToRead);
-                    expectingPacketData = false;
-                    packetSizeToRead = 0;
-                } else {
-                    break;
+        while (!shouldStop && client->socket != INVALID_SOCKET) {
+            int bytesReceived = client->tlsWrapper->recv(buffer, sizeof(buffer));
+            
+            if (bytesReceived <= 0) {
+                int err = SSL_get_error(client->tlsWrapper->getSSL(), bytesReceived);
+                
+                // ✅ Xử lý các lỗi SSL đúng cách
+                if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
                 }
+                
+                std::cout << "[CLIENT] " << clientId << " disconnected (SSL error: " << err << ")\n";
+                break;
             }
-            else {
-                size_t newline = messageBuffer.find('\n');
-                if (newline == std::string::npos) break;
 
+            messageBuffer.append(buffer, bytesReceived);
+            
+            if (messageBuffer.size() > 65536) {
+                std::cerr << "[SECURITY] Buffer overflow detected\n";
+                break;
+            }
+
+            // Process commands
+            size_t newline;
+            while ((newline = messageBuffer.find('\n')) != std::string::npos) {
                 std::string line = messageBuffer.substr(0, newline);
                 messageBuffer.erase(0, newline + 1);
-
-                // ✅ ADD LOGGING for all commands
-                std::cout << "[CMD] Client " << clientId << ": " << line.substr(0, 50) 
-                         << (line.length() > 50 ? "..." : "") << "\n";
-
+                
+                std::cout << "[CMD] Client " << clientId << ": " << line.substr(0, 50) << "\n";
+                
                 // AUTH command
                 if (line.rfind("AUTH ", 0) == 0) {
                     std::istringstream iss(line);
@@ -519,148 +342,57 @@ void VPNServer::handleClient(int clientId) {
                     
                     if (!handleAuthCommand(clientId, iss)) break;
                 }
-                // ✅ CRYPTO_INIT with proper validation
-                else if (line.rfind("CRYPTO_INIT|", 0) == 0) {
-                    // ✅ 1. CHECK AUTHENTICATION FIRST
+                // ✅ UDP_KEY_REQUEST
+                else if (line == "UDP_KEY_REQUEST") {
                     if (!clientManager->isClientAuthenticated(clientId)) {
-                        std::cerr << "[SECURITY] Unauthenticated CRYPTO_INIT from client " 
-                                  << clientId << "\n";
-                        clientManager->sendToClient(clientId, "ERROR|Not authenticated\n");
-                        continue;  // ✅ Don't break, just skip
+                        sendTLS(clientId, "ERROR|Not authenticated\n");
+                        continue;
                     }
                     
-                    // ✅ 2. RATE LIMITING
-                    {
-                        std::lock_guard<std::mutex> lock(rateLimitMutex);
-                        auto now = std::chrono::steady_clock::now();
-                        
-                        if (lastCryptoInit.count(clientId)) {
-                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                now - lastCryptoInit[clientId]).count();
-                            
-                            if (elapsed < 1000) {
-                                cryptoAttempts[clientId]++;
-                                if (cryptoAttempts[clientId] > 3) {
-                                    std::cerr << "[SECURITY] Client " << clientId 
-                                             << " exceeded crypto rate limit\n";
-                                    clientManager->sendToClient(clientId, "ERROR|Rate limit\n");
-                                    continue;  // ✅ Don't break
-                                }
-                            } else {
-                                cryptoAttempts[clientId] = 0;
-                            }
-                        }
-                        lastCryptoInit[clientId] = now;
+                    std::vector<uint8_t> udpKey(32);
+                    if (RAND_bytes(udpKey.data(), 32) != 1) {
+                        sendTLS(clientId, "UDP_KEY_FAIL|Key generation failed\n");
+                        continue;
                     }
                     
-                    // ✅ 3. PREVENT RE-INITIALIZATION
-                    std::string existingKey = clientManager->getServerPublicKey(clientId);
-                    if (!existingKey.empty()) {
-                        std::cerr << "[SECURITY] Client " << clientId 
-                                 << " attempted crypto re-init\n";
-                        clientManager->sendToClient(clientId, "ERROR|Already initialized\n");
-                        continue;  // ✅ Don't break
+                    if (!clientManager->setupUDPCrypto(clientId, udpKey)) {
+                        sendTLS(clientId, "UDP_KEY_FAIL|Setup failed\n");
+                        continue;
                     }
                     
-                    // ✅ 4. PARSE KEY - Wait for complete multi-line PEM
-                    std::string clientPubKey;
-                    size_t pos = line.find('|');
-                    if (pos != std::string::npos && pos + 1 < line.length()) {
-                        clientPubKey = line.substr(pos + 1);
-                        
-                        // ✅ Read remaining PEM lines
-                        while (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
-                            if (messageBuffer.find('\n') == std::string::npos) {
-                                // Wait for more data
-                                break;
-                            }
-                            size_t nextNewline = messageBuffer.find('\n');
-                            std::string nextLine = messageBuffer.substr(0, nextNewline);
-                            messageBuffer.erase(0, nextNewline + 1);
-                            
-                            clientPubKey += "\n" + nextLine;
-                            
-                            // ✅ Buffer overflow protection
-                            if (clientPubKey.length() > 2048) {
-                                std::cerr << "[SECURITY] PEM key too large\n";
-                                clientManager->sendToClient(clientId, "CRYPTO_FAIL|Key too large\n");
-                                goto next_command;  // ✅ Skip to next command
-                            }
-                        }
-                        
-                        if (clientPubKey.find("END PUBLIC KEY") == std::string::npos) {
-                            // Put back incomplete command
-                            messageBuffer = "CRYPTO_INIT|" + clientPubKey + "\n" + messageBuffer;
-                            break;
-                        }
-                    } else {
-                        std::cerr << "[SECURITY] Client " << clientId << " invalid format\n";
-                        clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid format\n");
-                        continue;  // ✅ Don't break
-                    }
+                    std::string response = "UDP_KEY|";
+                    response.append((char*)udpKey.data(), 32);
+                    response += "\n";
                     
-                    // ✅ 5. VALIDATE KEY FORMAT
-                    if (clientPubKey.find("-----BEGIN PUBLIC KEY-----") == std::string::npos ||
-                        clientPubKey.find("-----END PUBLIC KEY-----") == std::string::npos) {
-                        std::cerr << "[SECURITY] Client " << clientId << " incomplete PEM\n";
-                        clientManager->sendToClient(clientId, "CRYPTO_FAIL|Invalid key\n");
-                        continue;  // ✅ Don't break
+                    if (client->tlsWrapper->send(response.c_str(), response.length()) <= 0) {
+                        std::cerr << "[TLS] Failed to send UDP key\n";
+                        break;
                     }
-                    
-                    // ✅ 6. SETUP CRYPTO
-                    if (clientManager->setupCrypto(clientId, clientPubKey)) {
-                        std::string serverPubKey = clientManager->getServerPublicKey(clientId);
-                        std::string response = "CRYPTO_OK|" + serverPubKey + "\n";
-                        send(client->socket, response.c_str(), response.length(), MSG_NOSIGNAL);
-                        std::cout << "[CRYPTO] ✓ Handshake complete with client " << clientId << "\n";
-                    } else {
-                        std::cerr << "[SECURITY] Client " << clientId << " crypto setup failed\n";
-                        std::string errorMsg = "CRYPTO_FAIL|Setup failed\n";
-                        send(client->socket, errorMsg.c_str(), errorMsg.length(), MSG_NOSIGNAL);
-                    }
-                    
-                    next_command:;  // ✅ Label for goto
+                    std::cout << "[CRYPTO] UDP key sent to client " << clientId << "\n";
                 }
-                // Other commands
-                else if (line.rfind("PING", 0) == 0) {
+                else if (line == "PING") {
                     handlePingCommand(clientId);
                 }
-                else if (line.rfind("GET_STATUS", 0) == 0) {
+                else if (line == "GET_STATUS") {
                     handleStatusCommand(clientId);
                 }
-                else if (line.rfind("DISCONNECT", 0) == 0) {
-                    clientManager->sendToClient(clientId, "BYE|Goodbye\n");
+                else if (line == "DISCONNECT") {
+                    sendTLS(clientId, "BYE|Goodbye\n");
                     goto cleanup;
                 }
-                else if (line.rfind("DATA|", 0) == 0) {
-                    size_t pos = line.find('|');
-                    if (pos != std::string::npos) {
-                        std::string sizeStr = line.substr(pos + 1);
-                        try {
-                            packetSizeToRead = std::stoi(sizeStr);
-                            if (packetSizeToRead > 0 && packetSizeToRead <= 2048) {
-                                expectingPacketData = true;
-                            } else {
-                                std::cerr << "[SECURITY] Invalid packet size: " 
-                                         << packetSizeToRead << "\n";
-                            }
-                        } catch (...) {
-                            std::cerr << "[SECURITY] Invalid DATA command\n";
-                        }
-                    }
-                }
                 else {
-                    if (!clientManager->isClientAuthenticated(clientId)) {
-                        clientManager->sendToClient(clientId, "ERROR|Please authenticate first\n");
-                    } else {
-                        clientManager->sendToClient(clientId, "ERROR|Unknown command\n");
-                    }
+                    sendTLS(clientId, "ERROR|Unknown command\n");
                 }
             }
         }
     }
 
 cleanup:
+    if (client->tlsWrapper) {
+        client->tlsWrapper->cleanup();
+        delete client->tlsWrapper;
+        client->tlsWrapper = nullptr;
+    }
     clientManager->removeClient(clientId);
 }
 
@@ -701,30 +433,17 @@ bool VPNServer::handleAuthCommand(int clientId, std::istringstream& iss) {
         if (clientManager->assignVPNIP(clientId)) {
             std::string vpnIP = clientManager->getClientVPNIP(clientId);
             
-            ClientInfo* client = clientManager->getClientInfo(clientId);
-            std::string serverRealIP = "0.0.0.0";
-            if (client && client->socket != INVALID_SOCKET) {
-                struct sockaddr_in addr;
-                socklen_t addr_len = sizeof(addr);
-                if (getsockname(client->socket, (struct sockaddr*)&addr, &addr_len) == 0) {
-                    char ip[INET_ADDRSTRLEN];
-                    inet_ntop(AF_INET, &addr.sin_addr, ip, INET_ADDRSTRLEN);
-                    serverRealIP = std::string(ip);
-                }
-            }
-            
-            std::string response = "AUTH_OK|Authentication successful|VPN_IP:" + vpnIP + 
+            std::string response = "AUTH_OK|VPN_IP:" + vpnIP + 
                      "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24"
-                     "|SERVER_REAL_IP:" + serverRealIP + 
-                     "|UDP_PORT:5502" +
+                     "|UDP_PORT:5502"
                      "|CLIENT_ID:" + std::to_string(clientId) + "\n";
                      
-            clientManager->sendToClient(clientId, response);
+            sendTLS(clientId, response);
         } else {
-            clientManager->sendToClient(clientId, "AUTH_FAIL|No VPN IP available\n");
+            sendTLS(clientId, "AUTH_FAIL|No VPN IP available\n");
         }
     } else {
-        clientManager->sendToClient(clientId, "AUTH_FAIL|Invalid credentials\n");
+        sendTLS(clientId, "AUTH_FAIL|Invalid credentials\n");
     }
     
     return true;

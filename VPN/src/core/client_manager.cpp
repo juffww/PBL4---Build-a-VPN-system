@@ -341,93 +341,35 @@ std::vector<std::string> ClientManager::getClientStats() {
     return stats;
 }
 
+// Replace setupCrypto() in client_manager.cpp with:
 
-bool ClientManager::setupCrypto(int clientId, const std::string& clientPubKey) {
+bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
     
-    // ✅ 1. Empty check
-    if (clientPubKey.empty()) {
-        std::cerr << "[SECURITY] Empty key rejected for client " << clientId << "\n";
+    if (key.size() != 32) {
+        std::cerr << "[SECURITY] Invalid key size: " << key.size() << "\n";
         return false;
-    }
-
-    // ✅ 2. Length check (X25519 PEM is typically 120-200 bytes)
-    if (clientPubKey.length() < 50 || clientPubKey.length() > 2048) { 
-        std::cerr << "[SECURITY] Invalid key length: " << clientPubKey.length() 
-                  << " for client " << clientId << "\n";
-        return false;
-    }
-    
-    // ✅ 3. PEM format check
-    if (clientPubKey.find("-----BEGIN PUBLIC KEY-----") == std::string::npos ||
-        clientPubKey.find("-----END PUBLIC KEY-----") == std::string::npos) {
-        std::cerr << "[SECURITY] Invalid PEM format for client " << clientId << "\n";
-        return false;
-    }
-    
-    // ✅ 4. Check for garbage in PEM body (between headers)
-    size_t beginPos = clientPubKey.find("-----BEGIN PUBLIC KEY-----") + 26;
-    size_t endPos = clientPubKey.find("-----END PUBLIC KEY-----");
-    if (beginPos >= endPos) {
-        std::cerr << "[SECURITY] Malformed PEM structure for client " << clientId << "\n";
-        return false;
-    }
-    
-    std::string pemBody = clientPubKey.substr(beginPos, endPos - beginPos);
-    // Remove whitespace for checking
-    pemBody.erase(std::remove_if(pemBody.begin(), pemBody.end(), ::isspace), pemBody.end());
-    
-    // X25519 public key in PEM is base64 encoded (valid chars: A-Za-z0-9+/=)
-    for (char c : pemBody) {
-        if (!isalnum(c) && c != '+' && c != '/' && c != '=') {
-            std::cerr << "[SECURITY] Invalid characters in key for client " << clientId << "\n";
-            return false;
-        }
     }
     
     ClientCrypto crypto;
-    std::string privKey;
-    
-    if (!CryptoEngine::GenerateKeyPair(privKey, crypto.serverPublicKey)) {
-        std::cerr << "[CRYPTO] Keygen failed for client " << clientId << "\n";
-        return false;
-    }
-    
-    try {
-        if (!CryptoEngine::DeriveSharedSecret(privKey, clientPubKey, crypto.sharedKey)) {
-            std::cerr << "[SECURITY] Key derivation failed (invalid key material) for client " 
-                      << clientId << "\n";
-            return false;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[SECURITY] Exception during key derivation: " << e.what() << "\n";
-        return false;
-    }
-    
-    // ✅ 5. CRITICAL: Store the crypto state!
+    crypto.udpSharedKey = key;
     crypto.ready = true;
     crypto.txCounter = 0;
     crypto.rxCounter = 0;
     cryptoMap[clientId] = crypto;
     
-    std::cout << "[CRYPTO] ✓ Crypto setup complete for client " << clientId << "\n";
-    
+    std::cout << "[CRYPTO] UDP encryption ready for client " << clientId << "\n";
     return true;
 }
 
-std::string ClientManager::getServerPublicKey(int clientId) {
-    std::lock_guard<std::mutex> lock(cryptoMutex);
-    auto it = cryptoMap.find(clientId);
-    return (it != cryptoMap.end()) ? it->second.serverPublicKey : "";
-}
-
+// Update encryptPacket() to use udpSharedKey:
 bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize,
                                   std::vector<uint8_t>& encrypted) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
     auto it = cryptoMap.find(clientId);
     if (it == cryptoMap.end() || !it->second.ready) return false;
     
-    // Generate IV from counter (12 bytes)
+    // Generate IV from counter
     std::vector<uint8_t> iv(12);
     uint64_t counter = it->second.txCounter++;
     memcpy(iv.data(), &counter, 8);
@@ -435,7 +377,7 @@ bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize
     std::vector<uint8_t> plainVec(plain, plain + plainSize);
     std::vector<uint8_t> ciphertext, tag;
     
-    if (!CryptoEngine::Encrypt(it->second.sharedKey, iv, plainVec, ciphertext, tag)) {
+    if (!CryptoEngine::Encrypt(it->second.udpSharedKey, iv, plainVec, ciphertext, tag)) {
         return false;
     }
     
@@ -448,22 +390,21 @@ bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize
     return true;
 }
 
+// Update decryptPacket() similarly:
 bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSize,
                                   std::vector<uint8_t>& plain) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
     auto it = cryptoMap.find(clientId);
     if (it == cryptoMap.end() || !it->second.ready || encSize < 28) return false;
     
-    // Extract: [IV:12][Tag:16][Ciphertext:N]
     std::vector<uint8_t> iv(encrypted, encrypted + 12);
     std::vector<uint8_t> tag(encrypted + 12, encrypted + 28);
     std::vector<uint8_t> ciphertext(encrypted + 28, encrypted + encSize);
     
-    if (!CryptoEngine::Decrypt(it->second.sharedKey, iv, ciphertext, tag, plain)) {
-        std::cerr << "[SECURITY] Decryption failed for client " << clientId 
-                  << " (Tag mismatch - packet tampered)\n";
+    if (!CryptoEngine::Decrypt(it->second.udpSharedKey, iv, ciphertext, tag, plain)) {
         return false;
     }
     
     return true;
 }
+

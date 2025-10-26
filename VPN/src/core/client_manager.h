@@ -7,6 +7,7 @@
 #include <queue>
 #include <mutex>
 #include <chrono>
+#include "tls_wrapper.h"
 #ifdef _WIN32
     #include <winsock2.h>
     typedef SOCKET SOCKET;
@@ -34,8 +35,11 @@ struct ClientInfo {
     long long bytesSent;
     long long bytesReceived;
     
-    ClientInfo() : id(-1), socket(INVALID_SOCKET), port(0), authenticated(false), 
-                   ipAssigned(false), bytesSent(0), bytesReceived(0) {}
+    TLSWrapper* tlsWrapper;  
+    
+    ClientInfo() : id(-1), socket(INVALID_SOCKET), port(0), 
+                   authenticated(false), ipAssigned(false),
+                   bytesSent(0), bytesReceived(0), tlsWrapper(nullptr) {}
 };
 
 class IPPool {
@@ -66,11 +70,12 @@ private:
 
     // === CRYPTO ===
     struct ClientCrypto {
-        std::vector<uint8_t> sharedKey;      // AES-256 key
-        std::string serverPublicKey;          // Server's public key
-        uint64_t txCounter;                   // Nonce counter (TX)
-        uint64_t rxCounter;                   // Nonce counter (RX)
+        std::vector<uint8_t> udpSharedKey;  // 32-byte key for UDP encryption
+        uint64_t txCounter;
+        uint64_t rxCounter;
         bool ready;
+        
+        ClientCrypto() : txCounter(0), rxCounter(0), ready(false) {}
     };
     std::map<int, ClientCrypto> cryptoMap;
     std::mutex cryptoMutex;
@@ -109,8 +114,8 @@ public:
     std::vector<std::string> getClientStats();
 
     // Crypto functions
-    bool setupCrypto(int clientId, const std::string& clientPubKey);
-    std::string getServerPublicKey(int clientId);
+    bool setupUDPCrypto(int clientId, const std::vector<uint8_t>& key);
+    //std::string getServerPublicKey(int clientId);
     bool encryptPacket(int clientId, const char* plain, int plainSize, 
                       std::vector<uint8_t>& encrypted);
     bool decryptPacket(int clientId, const char* encrypted, int encSize,

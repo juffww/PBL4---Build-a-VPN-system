@@ -9,6 +9,7 @@
 #include <sstream>
 #include <map>
 #include <mutex>
+#include <openssl/rand.h>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -25,6 +26,7 @@
     #include <netinet/in.h>
 #endif
 
+#include "tls_wrapper.h"
 #include "client_manager.h"
 #include "tunnel_manager.h"
 #include "packet_handler.h"
@@ -42,6 +44,9 @@ private:
     std::thread udpThread;
     std::map<int, struct sockaddr_in> clientUDPAddrs;
     std::mutex udpAddrMutex;
+
+    std::string certFile;
+    std::string keyFile;
     
     void handleUDPPackets();
     
@@ -75,7 +80,9 @@ private:
     void cleanup();
 
 public:
-    explicit VPNServer(int port = 5000);
+    explicit VPNServer(int port = 5000, 
+                   const std::string& cert = "certs/server.crt", 
+                   const std::string& key = "certs/server.key");
     ~VPNServer();
     
     // Core server operations
@@ -102,6 +109,9 @@ public:
     // UDP access for PacketHandler
     SOCKET getUDPSocket() const { return udpSocket; }
     bool getClientUDPAddr(int clientId, struct sockaddr_in& addr);
+
+    //TLS
+    void sendTLS(int clientId, const std::string& message);
 };
 
 #endif

@@ -187,12 +187,10 @@ bool TUNInterface::executeCommand(const std::string& cmd) {
 int TUNInterface::readPacket(char* buffer, int maxSize) {
     if (!isOpen || tunFd < 0) return -1;
     
-    // OPTIMIZATION: Direct read without select() for better performance
     int bytes = read(tunFd, buffer, maxSize);
     if (bytes > 0) {
         bytesReceived += bytes;
     } else if (bytes < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        // Only log real errors
         if (errno != EINTR) {
             std::cerr << "[ERROR] TUN read error: " << strerror(errno) << std::endl;
         }
