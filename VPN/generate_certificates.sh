@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Script tạo self-signed certificate cho VPN Server
-# Sử dụng cho môi trường dev/test
 
 CERT_DIR="./certs"
 DAYS_VALID=365

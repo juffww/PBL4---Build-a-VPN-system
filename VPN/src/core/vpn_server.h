@@ -26,7 +26,7 @@
     #include <netinet/in.h>
 #endif
 
-#include "tls_wrapper.h"
+#include "../crypto/tls_wrapper.h"
 #include "client_manager.h"
 #include "tunnel_manager.h"
 #include "packet_handler.h"

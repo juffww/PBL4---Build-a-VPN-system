@@ -341,7 +341,6 @@ std::vector<std::string> ClientManager::getClientStats() {
     return stats;
 }
 
-// Replace setupCrypto() in client_manager.cpp with:
 
 bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
