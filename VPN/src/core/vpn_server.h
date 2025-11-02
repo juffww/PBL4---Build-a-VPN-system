@@ -65,7 +65,6 @@ private:
     // Client handling threads
     std::vector<std::thread> clientThreads;
     
-    // Private methods
     bool initializeServerSocket();
     void acceptConnections();
     void handleClient(int clientId);

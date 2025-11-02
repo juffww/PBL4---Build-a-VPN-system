@@ -320,7 +320,6 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        // Parse command line arguments
         std::string certFile, keyFile;
         int port = 5000;
         bool autoStart = false;

@@ -368,7 +368,6 @@ bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize
     auto it = cryptoMap.find(clientId);
     if (it == cryptoMap.end() || !it->second.ready) return false;
     
-    // Generate IV from counter
     std::vector<uint8_t> iv(12);
     uint64_t counter = it->second.txCounter++;
     memcpy(iv.data(), &counter, 8);

@@ -110,7 +110,7 @@ void TunnelManager::stop() {
 }
 
 void TunnelManager::processPackets() {
-    char buffer[4096]; // Increased buffer size
+    char buffer[4096]; 
     int consecutiveErrors = 0;
     const int maxErrors = 10;
     
@@ -118,12 +118,11 @@ void TunnelManager::processPackets() {
         int bytesRead = tunInterface->readPacket(buffer, sizeof(buffer));
         
         if (bytesRead > 0) {
-            consecutiveErrors = 0; // Reset error counter
+            consecutiveErrors = 0; 
             if (bytesRead >= 20) {
                 processIPPacket(buffer, bytesRead);
             }
         } else if (bytesRead == 0 || (bytesRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
-            // OPTIMIZATION: Adaptive sleep - sleep longer when idle
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         } else {
             consecutiveErrors++;

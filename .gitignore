@@ -1,0 +1,12 @@
+# Virtual environment
+venv/
+
+# Logs and test outputs
+*.log
+
+# Local scripts
+*.sh
+
+# Workspace settings
+*.code-workspace
+

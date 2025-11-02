@@ -68,9 +68,8 @@ private:
     
     std::string getCurrentTime();
 
-    // === CRYPTO ===
     struct ClientCrypto {
-        std::vector<uint8_t> udpSharedKey;  // 32-byte key for UDP encryption
+        std::vector<uint8_t> udpSharedKey;  
         uint64_t txCounter;
         uint64_t rxCounter;
         bool ready;

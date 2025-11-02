@@ -1,12 +1,11 @@
 #ifndef TUNNEL_MANAGER_H
 #define TUNNEL_MANAGER_H
 
-#include <string>
+#include <string> 
 #include <thread>
 #include <atomic>
 #include "../network/tun_interface.h"
 
-// Forward declaration
 class PacketHandler;
 
 class TunnelManager {

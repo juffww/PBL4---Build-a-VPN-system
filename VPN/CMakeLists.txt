@@ -21,23 +21,16 @@ endif()
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# file(GLOB_RECURSE SERVER_SOURCES
-#     src/core/*.cpp
-#     src/network/*.cpp
-# )
-
-# add_executable(vpn_server
-#     ${SERVER_SOURCES}
-# )
 add_executable(vpn_server
-    src/main.cpp
-    src/core/vpn_server.cpp
-    src/core/client_manager.cpp
-    src/core/packet_handler.cpp
-    src/core/tunnel_manager.cpp
-    src/network/tun_interface.cpp
-    src/network/socket_manager.cpp
-    src/core/config_manager.cpp 
+    src/main.cpp 
+    src/core/vpn_server.cpp 
+    src/core/client_manager.cpp 
+    src/core/packet_handler.cpp 
+    src/core/tunnel_manager.cpp 
+    src/crypto/crypto_engine.cpp 
+    src/crypto/tls_wrapper.cpp 
+    src/network/tun_interface.cpp 
+    src/network/socket_manager.cpp 
 )
 
 
