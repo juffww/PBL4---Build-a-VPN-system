@@ -25,7 +25,7 @@ class VPNTester:
         self.udp_port = 5502
         self.tx_counter = 0
         self.rx_counter = 0
-        self.keep_alive = True  # ✅ Flag để giữ TLS connection alive
+        self.keep_alive = True 
         
     def print_status(self, status_type, message):
         colors = {
