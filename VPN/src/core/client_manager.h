@@ -8,6 +8,7 @@
 #include <mutex>
 #include <chrono>
 #include "tls_wrapper.h"
+#include <openssl/evp.h>
 #ifdef _WIN32
     #include <winsock2.h>
     typedef SOCKET SOCKET;
@@ -71,7 +72,11 @@ private:
     struct ClientCrypto {
         std::vector<uint8_t> udpSharedKey;  
         uint64_t txCounter;
+        
+        EVP_CIPHER_CTX *encryptCtx;
+        EVP_CIPHER_CTX *decryptCtx;
         uint64_t rxCounter;
+        uint64_t rxWindowBitmap;
         bool ready;
         
         ClientCrypto() : txCounter(0), rxCounter(0), ready(false) {}
