@@ -107,22 +107,6 @@ int ClientManager::addClient(SOCKET socket, const std::string& realIP, int port)
     return clientInfo.id;
 }
 
-// bool ClientManager::authenticateClient(int clientId, const std::string& username, const std::string& password) {
-//     std::lock_guard<std::mutex> lock(clientsMutex);
-//     auto it = clients.find(clientId);
-//     if (it == clients.end()) return false;
-    
-//     bool authenticated = !username.empty() && !password.empty();
-//     if (authenticated) {
-//         it->second.authenticated = true;
-//         it->second.username = username;
-//         std::cout << "[SECURITY] Client " << clientId << " (" << username << ") authenticated successfully\n";
-//     } else {
-//         std::cerr << "[SECURITY] Client " << clientId << " authentication failed (user: " << username << ")\n";
-//     }
-    
-//     return authenticated;
-// }
 bool ClientManager::authenticateClient(int clientId, const std::string& username, const std::string& password) {
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = clients.find(clientId);
@@ -388,11 +372,9 @@ bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key
     crypto.udpSharedKey = key;
     crypto.ready = true;
     crypto.txCounter = 0;
-    // --- THÊM CÁC DÒNG SAU ---
     crypto.rxCounter = 0;
     crypto.rxWindowBitmap = 0;
 
-    // TỐI ƯU HÓA: Khởi tạo context một lần
     crypto.encryptCtx = EVP_CIPHER_CTX_new();
     crypto.decryptCtx = EVP_CIPHER_CTX_new();
 
@@ -402,14 +384,12 @@ bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key
         if (crypto.decryptCtx) EVP_CIPHER_CTX_free(crypto.decryptCtx);
         return false;
     }
-    // --- KẾT THÚC PHẦN THÊM ---
     cryptoMap[clientId] = crypto;
     
     std::cout << "[CRYPTO] UDP encryption ready for client " << clientId << "\n";
     return true;
 }
 
-// VIẾT LẠI HOÀN TOÀN HÀM NÀY
 bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize,
                                   std::vector<uint8_t>& encrypted) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
@@ -418,55 +398,53 @@ bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize
 
     std::vector<uint8_t> iv(12);
     uint64_t counter = it->second.txCounter++;
-    memcpy(iv.data(), &counter, 8); // 8 byte đầu là counter
+    memcpy(iv.data(), &counter, 8);
 
-    // --- TỐI ƯU HÓA: Tái sử dụng context ---
     EVP_CIPHER_CTX* ctx = it->second.encryptCtx;
     const std::vector<uint8_t>& key = it->second.udpSharedKey;
 
-    std::vector<uint8_t> ciphertext(plainSize + 16); // +16 cho an toàn
-    std::vector<uint8_t> tag(16);
     int len = 0, ciphertext_len = 0;
 
+    encrypted.resize(28 + plainSize + 16);
+
+    uint8_t* iv_ptr = encrypted.data();
+    uint8_t* tag_ptr = encrypted.data() + 12;
+    uint8_t* ciphertext_ptr = encrypted.data() + 28;
+
+    // 1. Init
     if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) goto err;
     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1) goto err;
     if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, key.data(), iv.data()) != 1) goto err;
     
-    if (EVP_EncryptUpdate(ctx, ciphertext.data(), &len, (const uint8_t*)plain, plainSize) != 1) goto err;
+    if (EVP_EncryptUpdate(ctx, ciphertext_ptr, &len, (const uint8_t*)plain, plainSize) != 1) goto err;
     ciphertext_len = len;
     
-    if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len) != 1) goto err;
+    if (EVP_EncryptFinal_ex(ctx, ciphertext_ptr + len, &len) != 1) goto err;
     ciphertext_len += len;
     
-    ciphertext.resize(ciphertext_len); // Resize về kích thước thật
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag_ptr) != 1) goto err;
 
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag.data()) != 1) goto err;
-    // --- KẾT THÚC TỐI ƯU HÓA ---
+    memcpy(iv_ptr, iv.data(), 12);
 
-    // Format: [IV:12][Tag:16][Ciphertext:N]
-    encrypted.resize(28 + ciphertext.size());
-    memcpy(encrypted.data(), iv.data(), 12);
-    memcpy(encrypted.data() + 12, tag.data(), 16);
-    memcpy(encrypted.data() + 28, ciphertext.data(), ciphertext.size());
+    encrypted.resize(28 + ciphertext_len);
     
     return true;
 
 err:
     std::cerr << "[CRYPTO] encryptPacket failed: " << ERR_error_string(ERR_get_error(), NULL) << "\n";
+    encrypted.clear(); 
     return false;
 }
 
-// VIẾT LẠI HOÀN TOÀN HÀM NÀY
 bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSize,
                                   std::vector<uint8_t>& plain) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
     auto it = cryptoMap.find(clientId);
     if (it == cryptoMap.end() || !it->second.ready || !it->second.decryptCtx || encSize < 28) return false;
 
-    // --- BẢO MẬT: Chống Replay Attack (Sliding Window) ---
     const uint8_t* iv_ptr = (const uint8_t*)encrypted;
     uint64_t nonce = 0;
-    memcpy(&nonce, iv_ptr, 8); // Lấy 8 byte counter từ IV
+    memcpy(&nonce, iv_ptr, 8); 
 
     if (nonce > it->second.rxCounter) {
         uint64_t diff = nonce - it->second.rxCounter;
@@ -480,32 +458,29 @@ bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSi
     } else {
         uint64_t diff = it->second.rxCounter - nonce;
         if (diff >= 64) {
-            return false; // Quá cũ, từ chối
+            return false; 
         }
         uint64_t bit = 1ULL << diff;
         if ((it->second.rxWindowBitmap & bit) != 0) {
-            return false; // Gói lặp lại, từ chối
+            return false; 
         }
         it->second.rxWindowBitmap |= bit;
     }
-    // --- KẾT THÚC BẢO MẬT ---
 
-    // Trích xuất con trỏ
     const uint8_t* tag_ptr = (const uint8_t*)encrypted + 12;
     const uint8_t* ciphertext_ptr = (const uint8_t*)encrypted + 28;
     int ciphertext_len = encSize - 28;
 
-    if (ciphertext_len < 0) return false; // Gói tin không hợp lệ
+    if (ciphertext_len < 0) return false; 
 
     std::vector<uint8_t> ciphertext(ciphertext_ptr, ciphertext_ptr + ciphertext_len);
     std::vector<uint8_t> tag(tag_ptr, tag_ptr + 16);
     std::vector<uint8_t> iv(iv_ptr, iv_ptr + 12);
 
-    // --- TỐI ƯU HÓA: Tái sử dụng context ---
     EVP_CIPHER_CTX* ctx = it->second.decryptCtx;
     const std::vector<uint8_t>& key = it->second.udpSharedKey;
     
-    plain.resize(ciphertext_len + 16); // Kích thước tối đa
+    plain.resize(ciphertext_len + 16); 
     int len = 0, plaintext_len = 0, ret;
 
     if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) goto err;
@@ -518,14 +493,13 @@ bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSi
     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, (void*)tag.data()) != 1) goto err;
 
     ret = EVP_DecryptFinal_ex(ctx, plain.data() + len, &len);
-    // --- KẾT THÚC TỐI ƯU HÓA ---
 
     if (ret > 0) {
         plaintext_len += len;
         plain.resize(plaintext_len);
         return true;
     }
-    return false; // Xác thực thất bại (Tag mismatch)
+    return false;
 
 err:
     // Đừng in lỗi ở đây, vì client lỗi (như lỗi ở mục 2) sẽ làm spam log

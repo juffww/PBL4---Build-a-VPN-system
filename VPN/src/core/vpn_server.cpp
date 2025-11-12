@@ -382,7 +382,7 @@ void VPNServer::sendTLS(int clientId, const std::string& message) {
     }
     
     int totalSent = 0;
-    int retries = 5;  // Tăng số lần retry
+    int retries = 5;  
     
     while (totalSent < message.length() && retries > 0) {
         int sent = client->tlsWrapper->send(message.c_str() + totalSent, 
@@ -394,7 +394,6 @@ void VPNServer::sendTLS(int clientId, const std::string& message) {
                       << totalSent << "/" << message.length() << ") to client " 
                       << clientId << "\n";
             
-            // Nếu đã gửi hết, đợi một chút để đảm bảo flush
             if (totalSent >= message.length()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 return;
@@ -424,12 +423,7 @@ void VPNServer::handleUDPPackets() {
     char buffer[65536];
     struct sockaddr_in clientAddr;
     socklen_t addrLen = sizeof(clientAddr);
-    
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 10000;  
-    setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-    
+
     int rcvbuf = 4194304;  
     int sndbuf = 4194304; 
     setsockopt(udpSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvbuf, sizeof(rcvbuf));
@@ -521,7 +515,11 @@ void VPNServer::handleUDPPackets() {
                     }
                 }
             }
-        } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        else if (n < 0) {
+            if (shouldStop) {
+                std::cout << "[UDP] Handler stopping...\n";
+                break;
+            }
             std::cerr << "[UDP] recvfrom error: " << strerror(errno) << "\n";
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
@@ -529,7 +527,7 @@ void VPNServer::handleUDPPackets() {
     
     std::cout << "[UDP] Handler stopped\n";
 }
-
+}
 bool VPNServer::getClientUDPAddr(int clientId, struct sockaddr_in& addr) {
     std::lock_guard<std::mutex> lock(udpAddrMutex);
     auto it = clientUDPAddrs.find(clientId);
