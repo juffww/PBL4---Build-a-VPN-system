@@ -57,15 +57,13 @@ bool TUNInterface::create() {
     interfaceName = ifr.ifr_name;
     isOpen = true;
 
-    // Non-blocking mode
     int flags = fcntl(tunFd, F_GETFL, 0);
     if (flags != -1) {
         fcntl(tunFd, F_SETFL, flags | O_NONBLOCK);
     }
 
-    // OPTIMIZATION: Increase socket buffer sizes
-    int sndbuf = 1048576; // 1MB send buffer
-    int rcvbuf = 1048576; // 1MB receive buffer
+    int sndbuf = 1048576; 
+    int rcvbuf = 1048576; 
     setsockopt(tunFd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
     setsockopt(tunFd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
 
@@ -178,36 +176,69 @@ std::string TUNInterface::getDefaultGateway() {
 }
 
 bool TUNInterface::executeCommand(const std::string& cmd) {
-    // Remove debug output for performance
     int result = system(cmd.c_str());
     return (result == 0);
 }
 
-int TUNInterface::readPacket(char* buffer, int maxSize) {
+int TUNInterface::readPacketBatch(PacketBatch& batch) {
     if (!isOpen || tunFd < 0) return -1;
     
-    int bytes = read(tunFd, buffer, maxSize);
-    if (bytes > 0) {
-        bytesReceived += bytes;
-    } else if (bytes < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        if (errno != EINTR) {
-            std::cerr << "[ERROR] TUN read error: " << strerror(errno) << std::endl;
+    batch.count = 0;
+    
+    // Đọc tối đa MAX_BATCH_SIZE packets
+    for (int i = 0; i < MAX_BATCH_SIZE; i++) {
+        int bytes = read(tunFd, batch.buffers[i], sizeof(batch.buffers[i]));
+        
+        if (bytes > 0) {
+            batch.sizes[i] = bytes;
+            batch.count++;
+            bytesReceived += bytes;
+            
+            // Tiếp tục đọc nếu còn data
+            // (non-blocking sẽ trả EAGAIN khi hết)
+        } 
+        else if (bytes < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Hết data - return số packets đã đọc
+                break;
+            } else if (errno != EINTR) {
+                std::cerr << "[ERROR] TUN read error: " << strerror(errno) << std::endl;
+                return -1;
+            }
+        } else {
+            // bytes == 0 - EOF (không bao giờ xảy ra với TUN)
+            break;
         }
     }
-    return bytes;
+    
+    return batch.count;
 }
 
-int TUNInterface::writePacket(const char* buffer, int size) {
-    if (!isOpen || tunFd < 0) return -1;
+int TUNInterface::writePacketBatch(const PacketBatch& batch) {
+    if (!isOpen || tunFd < 0 || batch.count == 0) return -1;
     
-    int bytes = write(tunFd, buffer, size);
-    if (bytes > 0) {
-        bytesSent += bytes;
-        // Remove debug output completely for performance
-    } else if (bytes < 0) {
-        std::cerr << "[ERROR] Write to TUN failed: " << strerror(errno) << std::endl;
+    // Setup iovec array cho writev()
+    struct iovec iov[MAX_BATCH_SIZE];
+    for (int i = 0; i < batch.count; i++) {
+        iov[i].iov_base = (void*)batch.buffers[i];
+        iov[i].iov_len = batch.sizes[i];
     }
-    return bytes;
+    
+    // Write all packets in one syscall
+    ssize_t totalBytes = writev(tunFd, iov, batch.count);
+    
+    if (totalBytes > 0) {
+        bytesSent += totalBytes;
+        return batch.count;  // Trả về số packets đã ghi
+    } else if (totalBytes < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            std::cerr << "[ERROR] Batch write to TUN failed: " << strerror(errno) 
+                      << " (" << batch.count << " packets)\n";
+        }
+        return -1;
+    }
+    
+    return 0;
 }
 
 void TUNInterface::close() {

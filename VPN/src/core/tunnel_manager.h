@@ -15,8 +15,25 @@ private:
     std::atomic<bool> tunnelThreadRunning;
     PacketHandler* packetHandler;
     std::string interfaceName;
+
+    std::thread readThread;
+    std::thread processThread;
+    struct PacketBuffer {
+        char data[65536];
+        int size;
+    };
     
-    void processPackets();
+    static const int QUEUE_SIZE = 1024;
+    PacketBuffer packetQueue[QUEUE_SIZE];
+    std::atomic<int> readIndex{0};
+    std::atomic<int> writeIndex{0};
+
+    void readPackets();      // NEW
+    void processPacketsLoop(); // RENAME từ processPackets
+    bool enqueuePacket(const char* data, int size);
+    bool dequeuePacket(PacketBuffer& packet);
+
+    //void processPackets();
     void processIPPacket(const char* packet, int size);
     void setupVPNRouting(const std::string& subnet);
     void setupNATRules(const std::string& subnet);

@@ -2,7 +2,16 @@
 #define TUN_INTERFACE_H
 #include <string>
 #include <atomic>
+#include <sys/uio.h>
 #include <cstdint>
+#define MAX_BATCH_SIZE 32 
+
+struct PacketBatch {
+    char buffers[MAX_BATCH_SIZE][2048]; 
+    int sizes[MAX_BATCH_SIZE];
+    int count;
+};
+
 class TUNInterface {
 private:
     std::string interfaceName;
@@ -23,8 +32,11 @@ public:
     std::string getDefaultGateway();
     std::string getDefaultInterface();
     bool executeCommand(const std::string& cmd);
-    int readPacket(char* buffer, int maxSize);
-    int writePacket(const char* buffer, int size);
+    // int readPacket(char* buffer, int maxSize);
+    // int writePacket(const char* buffer, int size);
+    int readPacketBatch(PacketBatch& batch);
+    int writePacketBatch(const PacketBatch& batch);
+    
     void close();
     void resetStats();
 

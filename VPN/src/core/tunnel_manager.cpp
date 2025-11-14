@@ -1,4 +1,5 @@
 #include "tunnel_manager.h"
+#include "tun_interface.h"
 #include "packet_handler.h"
 #include <iostream>
 #include <cstring>
@@ -93,46 +94,135 @@ void TunnelManager::start() {
     }
     
     tunnelThreadRunning = true;
-    tunnelThread = std::thread(&TunnelManager::processPackets, this);
-    std::cout << "[TUNNEL] Processing started\n";
+    
+    readThread = std::thread(&TunnelManager::readPackets, this);
+    processThread = std::thread(&TunnelManager::processPacketsLoop, this);
+    
+    std::cout << "[TUNNEL] Multi-threaded processing started (2 threads)\n";
 }
 
 void TunnelManager::stop() {
     tunnelThreadRunning = false;
     
-    if (tunnelThread.joinable()) {
-        tunnelThread.join();
+    if (readThread.joinable()) {
+        readThread.join();
+    }
+    if (processThread.joinable()) {
+        processThread.join();
     }
     
     if (tunInterface) {
         cleanupNATRules();
     }
+    
+    std::cout << "[TUNNEL] Threads stopped\n";
 }
 
-void TunnelManager::processPackets() {
-    char buffer[4096]; 
+void TunnelManager::readPackets() {
+    PacketBatch batch;
     int consecutiveErrors = 0;
     const int maxErrors = 10;
     
+    std::cout << "[TUNNEL] Read thread started (TID: " << std::this_thread::get_id() << ")\n";
+    
     while (tunnelThreadRunning && tunInterface && tunInterface->isOpened()) {
-        int bytesRead = tunInterface->readPacket(buffer, sizeof(buffer));
+        int packetsRead = tunInterface->readPacketBatch(batch);
         
-        if (bytesRead > 0) {
-            consecutiveErrors = 0; 
-            if (bytesRead >= 20) {
-                processIPPacket(buffer, bytesRead);
+        if (packetsRead > 0) {
+            consecutiveErrors = 0;
+            
+            // Xử lý từng packet trong batch
+            for (int i = 0; i < batch.count; i++) {
+                if (batch.sizes[i] >= 20) {
+                    if (!enqueuePacket(batch.buffers[i], batch.sizes[i])) {
+                        std::this_thread::sleep_for(std::chrono::microseconds(50));
+                    }
+                }
             }
-        } else if (bytesRead == 0 || (bytesRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
-        } else {
+        } 
+        else if (packetsRead == 0 || (packetsRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+        } 
+        else {
             consecutiveErrors++;
             if (consecutiveErrors >= maxErrors) {
-                std::cout << "[ERROR] Too many TUN read errors, stopping\n";
+                std::cout << "[ERROR] Too many TUN read errors, stopping read thread\n";
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
+    
+    std::cout << "[TUNNEL] Read thread exited\n";
+}
+
+// Thay thế hàm injectPacket() (dòng 237-243)
+bool TunnelManager::injectPacket(const char* packet, int size) {
+    if (!tunInterface || !tunInterface->isOpened()) {
+        return false;
+    }
+    
+    // Tạo batch với 1 packet
+    PacketBatch batch;
+    batch.count = 1;
+    memcpy(batch.buffers[0], packet, size);
+    batch.sizes[0] = size;
+    
+    int written = tunInterface->writePacketBatch(batch);
+    return (written > 0);
+}
+
+void TunnelManager::processPacketsLoop() {
+    PacketBuffer packet;
+    
+    std::cout << "[TUNNEL] Process thread started (TID: " << std::this_thread::get_id() << ")\n";
+    
+    while (tunnelThreadRunning) {
+        if (dequeuePacket(packet)) {
+            // Có packet → xử lý
+            processIPPacket(packet.data, packet.size);
+        } else {
+            // Queue rỗng → sleep ngắn
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+        }
+    }
+    
+    std::cout << "[TUNNEL] Process thread exited\n";
+}
+
+bool TunnelManager::enqueuePacket(const char* data, int size) {
+    int currentWrite = writeIndex.load(std::memory_order_relaxed);
+    int nextWrite = (currentWrite + 1) % QUEUE_SIZE;
+    
+    // Kiểm tra queue full
+    if (nextWrite == readIndex.load(std::memory_order_acquire)) {
+        return false; // Queue full
+    }
+    
+    // Copy data
+    memcpy(packetQueue[currentWrite].data, data, size);
+    packetQueue[currentWrite].size = size;
+    
+    // Update write index
+    writeIndex.store(nextWrite, std::memory_order_release);
+    return true;
+}
+
+bool TunnelManager::dequeuePacket(PacketBuffer& packet) {
+    int currentRead = readIndex.load(std::memory_order_relaxed);
+    
+    // Kiểm tra queue empty
+    if (currentRead == writeIndex.load(std::memory_order_acquire)) {
+        return false; // Queue empty
+    }
+    
+    // Copy packet
+    packet = packetQueue[currentRead];
+    
+    // Update read index
+    int nextRead = (currentRead + 1) % QUEUE_SIZE;
+    readIndex.store(nextRead, std::memory_order_release);
+    return true;
 }
 
 void TunnelManager::processIPPacket(const char* packet, int size) {
@@ -157,15 +247,6 @@ void TunnelManager::processIPPacket(const char* packet, int size) {
     inet_ntop(AF_INET, &ip_header->daddr, dst_ip, 16);
     
     packetHandler->handleTUNPacket(packet, size, std::string(src_ip), std::string(dst_ip));
-}
-
-bool TunnelManager::injectPacket(const char* packet, int size) {
-    if (!tunInterface || !tunInterface->isOpened()) {
-        return false;
-    }
-    
-    int written = tunInterface->writePacket(packet, size);
-    return (written > 0);
 }
 
 void TunnelManager::cleanupNATRules() {
