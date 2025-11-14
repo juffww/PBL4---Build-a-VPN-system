@@ -110,7 +110,7 @@ void TunnelManager::stop() {
 }
 
 void TunnelManager::processPackets() {
-    char buffer[4096]; 
+    char buffer[65536]; 
     int consecutiveErrors = 0;
     const int maxErrors = 10;
     
@@ -123,7 +123,7 @@ void TunnelManager::processPackets() {
                 processIPPacket(buffer, bytesRead);
             }
         } else if (bytesRead == 0 || (bytesRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            //std::this_thread::sleep_for(std::chrono::microseconds(100));
         } else {
             consecutiveErrors++;
             if (consecutiveErrors >= maxErrors) {
