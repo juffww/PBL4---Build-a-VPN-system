@@ -3,12 +3,13 @@
 
 #include <QObject>
 #include <QTcpSocket>
+#include <QUdpSocket>
 #include <QTimer>
 #include <QString>
 #include <QNetworkAccessManager>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <openssl/evp.h>
 #include "tun_interface.h"
+#include "tls_wrapper_client.h"
 
 class VPNClient : public QObject
 {
@@ -22,7 +23,6 @@ public:
     void disconnectFromServer();
     bool isConnected() const;
 
-    // VPN specific methods
     void requestVPNIP();
     void requestStatus();
     QString getCurrentVPNIP() const { return assignedVpnIP; }
@@ -30,7 +30,6 @@ public:
     quint64 getBytesSent() const;
 
 public slots:
-    // TUN traffic simulation
     void startTUNTrafficGeneration();
     void stopTUNTrafficGeneration();
     void simulateWebBrowsing();
@@ -49,53 +48,67 @@ private slots:
     void onConnected();
     void onDisconnected();
     void onReadyRead();
+    void onUdpReadyRead();
+    void sendUdpHandshake();
+    void startUdpHandshake();
     void onError(QAbstractSocket::SocketError socketError);
-    void sendPing();
-    void processTUNTraffic();  // Renamed from generateTUNTraffic
+    // void sendPing();
+    void processTUNTraffic();
+    void requestUDPKey();
 
 private:
-    // Authentication and communication
     void authenticate(const QString& username, const QString& password);
     void sendMessage(const QString& message);
     void parseServerMessage(const QString& message);
 
-    // NEW: Packet handling functions
     void sendPacketToServer(const QByteArray& packetData);
     void writePacketToTUN(const QByteArray& packetData);
 
-    // Helper methods để xử lý message validation
-    bool isValidTextMessage(const QString& message);
-    bool isValidPacketData(const QString& packetData);
+    bool encryptPacket(const QByteArray& plain, QByteArray& encrypted);
+    bool decryptPacket(const QByteArray& encrypted, QByteArray& plain);
+    void setupUDPConnection();
 
-    // Socket and connection
+    // TCP
     QTcpSocket *socket;
     QTimer *pingTimer;
+    QTimer *tlsReadPoller;
 
-    // Authentication and server info
+    // UDP - THÊM
+    QUdpSocket *udpSocket;
+    QHostAddress udpServerAddr;
+    quint16 udpServerPort;
+    bool udpReady;
+
     bool authenticated;
     QString serverHost;
     int serverPort;
     QString assignedVpnIP;
     QString serverIP;
+    int clientId;  // THÊM: để đóng gói UDP
+    QTimer *udpHandshakeTimer;
 
-    // Protocol verification
-    bool serverProtocolVerified;
-    QString expectedServerProtocol;
-
-    // Traffic simulation
     QTimer* tunTrafficTimer;
     QNetworkAccessManager* networkManager;
     quint64 totalBytesReceived;
     quint64 totalBytesSent;
 
-    // TUN interface and packet handling
-    TUNInterface tun;
-    QByteArray tunReadBuffer;
+    TLSWrapper* tlsWrapper;
 
-    // NEW: Packet data state management
+    QByteArray messageBuffer;
+
+    TUNInterface tun;
+
     int pendingPacketSize;
     bool isReadingPacketData;
     QByteArray pendingPacketData;
+
+    EVP_CIPHER_CTX *encryptCtx;
+    EVP_CIPHER_CTX *decryptCtx;
+    bool cryptoReady;
+    std::vector<uint8_t> sharedKey;
+    uint64_t txCounter;  // Nonce counter for encryption
+    uint64_t rxCounter;  // Track received nonces for replay protection
+    uint64_t rxWindowBitmap;
 };
 
-#endif // VPN_CLIENT_H
+#endif

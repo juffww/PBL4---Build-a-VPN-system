@@ -5,31 +5,38 @@
 #include <atomic>
 #include <cstdint>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 class TUNInterface {
 private:
     std::string interfaceName;
     std::atomic<bool> isOpen;
-    int tunFd;                 // file descriptor / handle OS-specific
+    int tunFd;
     std::string vpnIP;
     std::string subnetMask;
-    std::string serverIP;      // IP của VPN server để set route
+    std::string serverIP;
     uint64_t bytesReceived;
     uint64_t bytesSent;
 
-    // OS-specific internal functions, sẽ implement trong cpp theo OS
-    bool configureClientMode();
+#ifdef _WIN32
+    OVERLAPPED readOverlapped;
+    OVERLAPPED writeOverlapped;
+#endif
 
+    bool configureClientMode();
     std::string findTAPAdapter();
-    std::string getAdapterFriendlyName();
+    std::string getAdapterName();
+
+    std::string getInterfaceIndex(const std::string& adapterName);
 
 public:
     TUNInterface(const std::string& name = "tun0");
     ~TUNInterface();
 
-    // Tạo TUN interface, OS-specific
     bool create();
 
-    // Configure IP và routes client, serverIP dùng để giữ route đến server
     bool configure(const std::string& ip, const std::string& mask,
                    const std::string& server = "");
 
@@ -38,25 +45,22 @@ public:
     std::string getDefaultGateway();
     std::string getDefaultInterface();
 
-    // Hỗ trợ chạy lệnh OS-specific (Linux/macOS/Windows)
     bool executeCommand(const std::string& cmd);
 
-    // Đọc/ghi packet từ TUN
+    // Read/write packet from/to TUN
     int readPacket(char* buffer, int maxSize);
     int writePacket(const char* buffer, int size);
 
     void close();
     void resetStats();
 
-    // Getter
+    // Getters
     std::string getName() const { return interfaceName; }
     std::string getIP() const { return vpnIP; }
     std::string getMask() const { return subnetMask; }
     bool isOpened() const { return isOpen.load(); }
     uint64_t getBytesReceived() const { return bytesReceived; }
     uint64_t getBytesSent() const { return bytesSent; }
-
-    std::string getInterfaceIndex();
 };
 
 #endif
