@@ -9,6 +9,9 @@
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
 #include <unordered_map> 
 #include "client_manager.h" 
 #include "tunnel_manager.h"
@@ -91,6 +94,24 @@ bool VPNServer::initialize() {
     std::cout << "[SERVER] Ready on TCP:" << serverPort << " UDP:5502\n";
     
     return true;
+}
+
+std::string base64_encode(const unsigned char* buffer, size_t length) {
+    BIO *bio, *b64;
+    BUF_MEM *bufferPtr;
+
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new(BIO_s_mem());
+    bio = BIO_push(b64, bio);
+
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+    BIO_write(bio, buffer, length);
+    BIO_flush(bio);
+    BIO_get_mem_ptr(bio, &bufferPtr);
+    
+    std::string res(bufferPtr->data, bufferPtr->length);
+    BIO_free_all(bio);
+    return res;
 }
 
 bool VPNServer::initializeServerSocket() {
@@ -328,9 +349,12 @@ void VPNServer::handleClient(int clientId) {
                         continue;
                     }
                     
-                    std::string response = "UDP_KEY|";
-                    response.append((char*)udpKey.data(), 32);
-                    response += "\n";
+                    // std::string response = "UDP_KEY|";
+                    // response.append((char*)udpKey.data(), 32);
+                    // response += "\n";
+                    std::string b64Key = base64_encode(udpKey.data(), udpKey.size());
+    
+                    std::string response = "UDP_KEY|" + b64Key + "\n";
                     
                     int sent = client->tlsWrapper->send(response.c_str(), response.length());
                     if (sent <= 0) {
@@ -515,6 +539,7 @@ void VPNServer::handleUDPPackets() {
                     }
                 }
             }
+        }
         else if (n < 0) {
             if (shouldStop) {
                 std::cout << "[UDP] Handler stopping...\n";
@@ -527,7 +552,7 @@ void VPNServer::handleUDPPackets() {
     
     std::cout << "[UDP] Handler stopped\n";
 }
-}
+
 bool VPNServer::getClientUDPAddr(int clientId, struct sockaddr_in& addr) {
     std::lock_guard<std::mutex> lock(udpAddrMutex);
     auto it = clientUDPAddrs.find(clientId);
