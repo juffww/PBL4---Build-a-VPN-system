@@ -446,80 +446,72 @@ int TUNInterface::readPacket(char* buffer, int maxSize) {
     if (!isOpen.load() || tunFd < 0) return -1;
 
     HANDLE handle = (HANDLE)(intptr_t)tunFd;
-    // BỎ: OVERLAPPED overlapped = {0};
-    // BỎ: overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    OVERLAPPED overlapped = {0};
+    overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-    ResetEvent(readOverlapped.hEvent); // DÙNG LẠI EVENT
+    if (!overlapped.hEvent) return -1;
 
     DWORD bytesRead = 0;
-    BOOL result = ReadFile(handle, buffer, maxSize, &bytesRead, &readOverlapped); // DÙNG readOverlapped
+    // Quan trọng: Đọc 1 byte trước để check status (hoặc đọc full nếu chắc chắn)
+    // Ở đây đọc full buffer
+    BOOL result = ReadFile(handle, buffer, maxSize, &bytesRead, &overlapped);
 
     if (!result) {
         if (GetLastError() == ERROR_IO_PENDING) {
-            DWORD timeout = 0;
-            DWORD waitResult = WaitForSingleObject(readOverlapped.hEvent, timeout);
+            // Chờ tối đa 10ms để không block luồng UI quá lâu
+            DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 10);
 
             if (waitResult == WAIT_OBJECT_0) {
-                GetOverlappedResult(handle, &readOverlapped, &bytesRead, FALSE); // DÙNG readOverlapped
+                GetOverlappedResult(handle, &overlapped, &bytesRead, FALSE);
             } else {
+                // Timeout hoặc lỗi -> Hủy lệnh đọc này
                 CancelIo(handle);
-                // BỎ: CloseHandle(overlapped.hEvent);
-                return 0;
+                bytesRead = 0; // Không đọc được gì
             }
-        } else {
-            // BỎ: CloseHandle(overlapped.hEvent);
-            return -1;
         }
     }
 
-    // BỎ: CloseHandle(overlapped.hEvent);
+    CloseHandle(overlapped.hEvent);
 
     if (bytesRead > 0) {
         bytesReceived += bytesRead;
+        return bytesRead;
     }
 
-    return bytesRead;
+    return 0;
 }
-
-// tun_interface_win.cpp
 
 int TUNInterface::writePacket(const char* buffer, int size) {
     if (!isOpen.load() || tunFd < 0 || size <= 0) return -1;
 
     HANDLE handle = (HANDLE)(intptr_t)tunFd;
-    // BỎ: OVERLAPPED overlapped = {0};
-    // BỎ: overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    OVERLAPPED overlapped = {0};
+    overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-    ResetEvent(writeOverlapped.hEvent); // DÙNG LẠI EVENT
+    if (!overlapped.hEvent) return -1;
 
     DWORD bytesWritten = 0;
-    BOOL result = WriteFile(handle, buffer, size, &bytesWritten, &writeOverlapped); // DÙNG writeOverlapped
+    BOOL result = WriteFile(handle, buffer, size, &bytesWritten, &overlapped);
 
     if (!result) {
         if (GetLastError() == ERROR_IO_PENDING) {
-            DWORD timeout = 0;
-            DWORD waitResult = WaitForSingleObject(writeOverlapped.hEvent, timeout);
-
+            DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 100); // Chờ ghi lâu hơn chút
             if (waitResult == WAIT_OBJECT_0) {
-                GetOverlappedResult(handle, &writeOverlapped, &bytesWritten, FALSE); // DÙNG writeOverlapped
+                GetOverlappedResult(handle, &overlapped, &bytesWritten, FALSE);
             } else {
                 CancelIo(handle);
-                // BỎ: CloseHandle(overlapped.hEvent);
-                return 0;
             }
-        } else {
-            // BỎ: CloseHandle(overlapped.hEvent);
-            return -1;
         }
     }
 
-    // BỎ: CloseHandle(overlapped.hEvent);
+    CloseHandle(overlapped.hEvent);
 
     if (bytesWritten > 0) {
         bytesSent += bytesWritten;
+        return bytesWritten;
     }
 
-    return bytesWritten;
+    return 0;
 }
 
 void TUNInterface::close() {
