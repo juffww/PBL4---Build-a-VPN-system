@@ -37,10 +37,6 @@ VPNClient::VPNClient(QObject *parent)
     udpSocket = new QUdpSocket(this);
 
     int bufferSize = 4 * 1024 * 1024;
-    // udpSocket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, 1048576);
-    // udpSocket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 1048576);
-    // socket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, 1048576);
-    // socket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 1048576);
     udpSocket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, bufferSize);
     udpSocket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, bufferSize);
     socket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, bufferSize);
@@ -52,11 +48,9 @@ VPNClient::VPNClient(QObject *parent)
     tlsReadPoller = new QTimer(this);
     tlsReadPoller->setInterval(10);
 
-    // Khởi tạo context một lần
     encryptCtx = EVP_CIPHER_CTX_new();
     decryptCtx = EVP_CIPHER_CTX_new();
 
-    // Tốt nhất nên kiểm tra null
     if (!encryptCtx || !decryptCtx) {
         qWarning() << "[CRYPTO] Failed to create EVP contexts";
     }
@@ -67,14 +61,12 @@ VPNClient::VPNClient(QObject *parent)
     connect(socket, &QTcpSocket::disconnected, this, &VPNClient::onDisconnected);
     connect(socket, &QTcpSocket::readyRead, this, &VPNClient::onReadyRead);
     connect(socket, &QAbstractSocket::errorOccurred, this, &VPNClient::onError);
-    //connect(pingTimer, &QTimer::timeout, this, &VPNClient::sendPing);
     connect(udpSocket, &QUdpSocket::readyRead, this, &VPNClient::onUdpReadyRead);
 
     pingTimer->setInterval(30000);
 
-    // OPTIMIZATION: Giảm timer interval xuống 1ms cho throughput cao hơn
     tunTrafficTimer = new QTimer(this);
-    tunTrafficTimer->setInterval(1);  // Từ 10ms -> 1ms
+    tunTrafficTimer->setInterval(1);
     connect(tunTrafficTimer, &QTimer::timeout, this, &VPNClient::processTUNTraffic);
 
 }
@@ -88,7 +80,6 @@ VPNClient::~VPNClient()
         tlsWrapper = nullptr;
     }
 
-    // Giải phóng context một lần
     if (encryptCtx) EVP_CIPHER_CTX_free(encryptCtx);
     if (decryptCtx) EVP_CIPHER_CTX_free(decryptCtx);
 }
@@ -104,7 +95,7 @@ void VPNClient::connectToServer(const QString& host, int port, const QString& us
     serverPort = port;
     authenticated = false;
     assignedVpnIP.clear();
-    udpReady = false;  // RESET UDP
+    udpReady = false;
 
     socket->setProperty("username", username);
     socket->setProperty("password", password);
@@ -169,7 +160,6 @@ void VPNClient::onConnected()
 
                 qDebug() << "[AUTH] Buffer size:" << messageBuffer.size() << "bytes";
 
-                // Check for AUTH_OK
                 if (!authReceived) {
                     int authPos = messageBuffer.indexOf("AUTH_OK|");
                     if (authPos != -1) {
@@ -188,23 +178,18 @@ void VPNClient::onConnected()
 
                 int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
                 if (udpKeyPos != -1) {
-                    // Tìm ký tự xuống dòng thay vì fix cứng độ dài
                     int newlinePos = messageBuffer.indexOf('\n', udpKeyPos);
 
                     if (newlinePos != -1) {
-                        // Cắt dòng chứa key
                         QByteArray keyLine = messageBuffer.mid(udpKeyPos, newlinePos - udpKeyPos);
 
                         qDebug() << "[CRYPTO] Found UDP_KEY line:" << keyLine;
 
-                        // Xóa khỏi buffer
                         messageBuffer.remove(udpKeyPos, newlinePos - udpKeyPos + 1);
 
                         if (keyLine.size() > 8) {
-                            // Lấy phần Base64 (Bỏ "UDP_KEY|")
                             QByteArray b64Key = keyLine.mid(8);
 
-                            // Giải mã Base64 -> Binary
                             QByteArray keyData = QByteArray::fromBase64(b64Key);
 
                             if (keyData.size() == 32) {
@@ -215,7 +200,7 @@ void VPNClient::onConnected()
                                 rxWindowBitmap = 0;
 
                                 qDebug() << "[CRYPTO] ✓ UDP encryption ready (Base64 decoded)";
-                                keyReceived = true; // Đánh dấu đã nhận thành công
+                                keyReceived = true;
                             } else {
                                 qWarning() << "[CRYPTO] Invalid key size after decode:" << keyData.size();
                             }
@@ -260,11 +245,7 @@ void VPNClient::onConnected()
         return;
     }
 
-    // Reconnect readyRead for future messages
     connect(socket, &QTcpSocket::readyRead, this, &VPNClient::onReadyRead);
-
-    // tlsReadPoller->setInterval(50);
-    // tlsReadPoller->start();
 
     qDebug() << "[TLS] ✓ Connection fully established";
 }
@@ -290,7 +271,6 @@ void VPNClient::disconnectFromServer()
     rxCounter = 0;
     rxWindowBitmap = 0;
 
-    // ✓ CLEANUP TLS
     if (tlsWrapper) {
         tlsWrapper->cleanup();
         delete tlsWrapper;
@@ -325,7 +305,7 @@ bool VPNClient::isConnected() const
 void VPNClient::startTUNTrafficGeneration()
 {
     if (authenticated && tunTrafficTimer) {
-        tunTrafficTimer->start(1);  // Từ 5ms -> 1ms
+        tunTrafficTimer->start(1);
     }
 }
 
@@ -334,7 +314,6 @@ void VPNClient::stopTUNTrafficGeneration()
     if (tunTrafficTimer) tunTrafficTimer->stop();
 }
 
-// Trong vpn_client.cpp
 
 void VPNClient::processTUNTraffic()
 {
@@ -347,38 +326,17 @@ void VPNClient::processTUNTraffic()
         int n = tun.readPacket(buffer, sizeof(buffer));
         if (n <= 0) break;
 
-        // === LOGIC LỌC VÀ CHUẨN HÓA GÓI TIN ===
-        char* sendData = buffer;
-        int sendSize = n;
-        bool shouldSend = false;
+        uint8_t ipVersion = ((uint8_t)buffer[0]) >> 4;
 
-        uint8_t firstByte = (uint8_t)buffer[0];
-
-        // TRƯỜNG HỢP 1: Raw IP Packet (IPv4 bắt đầu bằng 0x4...)
-        // Một số driver TAP ở chế độ đặc biệt có thể trả về cái này
-        if ((firstByte >> 4) == 4) {
-            shouldSend = true;
-        }
-        // TRƯỜNG HỢP 2: Ethernet Frame (Thường gặp trên Windows TAP)
-        // Header dài 14 bytes. Kiểm tra EtherType tại byte 12-13
-        // 0x08 0x00 là IPv4
-        else if (n > 14 && (uint8_t)buffer[12] == 0x08 && (uint8_t)buffer[13] == 0x00) {
-            // Kiểm tra byte đầu tiên của phần Payload (byte thứ 14)
-            uint8_t ipVer = (uint8_t)buffer[14] >> 4;
-            if (ipVer == 4) {
-                // Cắt bỏ 14 byte đầu (Ethernet Header)
-                sendData = buffer + 14;
-                sendSize = n - 14;
-                shouldSend = true;
+        if (ipVersion == 4 && n >= 20) {
+            sendPacketToServer(QByteArray(buffer, n));
+            packetsRead++;
+        } else {
+            static int dropCount = 0;
+            if (++dropCount % 100 == 0) {
+                qWarning() << "[TUN] Dropped" << dropCount << "invalid packets";
             }
         }
-
-        // Chỉ gửi nếu là IPv4 hợp lệ
-        if (shouldSend) {
-            sendPacketToServer(QByteArray(sendData, sendSize));
-            packetsRead++;
-        }
-        // Các gói ARP, IPv6, rác sẽ bị Drop tại đây -> Server sẽ hết lỗi Invalid Argument
     }
 
     static int statsCounter = 0;
@@ -397,7 +355,6 @@ void VPNClient::sendPacketToServer(const QByteArray& packetData)
         return;
     }
 
-    // ✅ PRIORITY: Luôn dùng UDP nếu ready
     if (udpReady && udpSocket->state() == QAbstractSocket::BoundState) {
         int totalSize = 8 + encryptedData.size();
         QByteArray udpPacket(totalSize, 0);

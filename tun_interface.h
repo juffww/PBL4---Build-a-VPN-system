@@ -7,6 +7,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
 #endif
 
 class TUNInterface {
@@ -20,14 +21,7 @@ private:
     uint64_t bytesReceived;
     uint64_t bytesSent;
 
-#ifdef _WIN32
-    OVERLAPPED readOverlapped;
-    OVERLAPPED writeOverlapped;
-#endif
-
     bool configureClientMode();
-    std::string findTAPAdapter();
-    std::string getAdapterName();
 
     std::string getInterfaceIndex(const std::string& adapterName);
 
@@ -47,7 +41,6 @@ public:
 
     bool executeCommand(const std::string& cmd);
 
-    // Read/write packet from/to TUN
     int readPacket(char* buffer, int maxSize);
     int writePacket(const char* buffer, int size);
 
