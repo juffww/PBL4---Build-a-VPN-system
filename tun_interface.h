@@ -51,6 +51,8 @@ public:
     int readPacket(char* buffer, int maxSize);
     int writePacket(const char* buffer, int size);
 
+    void setIPv6Status(bool enable);
+
     void close();
     void resetStats();
 

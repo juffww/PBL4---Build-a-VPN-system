@@ -114,7 +114,6 @@ bool TLSWrapper::initTLS(SOCKET sock) {
     std::cout << "[TLS] SSL object created, FD set: " << socket << "\n";
 
 #ifdef _WIN32
-    // Windows: Set timeout using setsockopt
     DWORD timeout = 10000; // 10 seconds in milliseconds
     if (setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
         std::cerr << "[TLS] Failed to set receive timeout\n";
@@ -123,7 +122,6 @@ bool TLSWrapper::initTLS(SOCKET sock) {
         std::cerr << "[TLS] Failed to set send timeout\n";
     }
 #else
-    // Unix/macOS: Use struct timeval
     struct timeval tv;
     tv.tv_sec = 10;
     tv.tv_usec = 0;
@@ -158,12 +156,10 @@ bool TLSWrapper::initTLS(SOCKET sock) {
 
     std::cout << "[TLS] Handshake successful (Cipher: " << SSL_get_cipher(ssl) << ")\n";
 
-    // Read welcome message (client only)
     if (!isServer) {
         std::cout << "[TLS] Waiting for server welcome message...\n";
 
 #ifdef _WIN32
-        // Windows: Use select()
         fd_set readfds;
         struct timeval tv;
         FD_ZERO(&readfds);
@@ -173,7 +169,6 @@ bool TLSWrapper::initTLS(SOCKET sock) {
 
         int selectRet = select(0, &readfds, nullptr, nullptr, &tv);
 #else
-        // Unix/macOS
         fd_set readfds;
         struct timeval tv;
         FD_ZERO(&readfds);
@@ -214,7 +209,6 @@ bool TLSWrapper::initTLS(SOCKET sock) {
         }
     }
 
-    // Set socket back to non-blocking mode
 #ifdef _WIN32
     mode = 1; // 1 = non-blocking
     if (ioctlsocket(socket, FIONBIO, &mode) != 0) {

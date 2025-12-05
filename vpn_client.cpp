@@ -186,29 +186,40 @@ void VPNClient::onConnected()
                     }
                 }
 
-                // Check for UDP_KEY (CRITICAL: Must be 41 bytes: "UDP_KEY|" + 32 bytes + "\n")
                 int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
-                if (udpKeyPos != -1 && messageBuffer.size() >= (udpKeyPos + 41)) {
-                    // Extract exactly 41 bytes: "UDP_KEY|" (8) + key (32) + "\n" (1)
-                    QByteArray keyLine = messageBuffer.mid(udpKeyPos, 41);
+                if (udpKeyPos != -1) {
+                    // Tìm ký tự xuống dòng thay vì fix cứng độ dài
+                    int newlinePos = messageBuffer.indexOf('\n', udpKeyPos);
 
-                    qDebug() << "[CRYPTO] Found UDP_KEY at position" << udpKeyPos
-                             << "size:" << keyLine.size();
+                    if (newlinePos != -1) {
+                        // Cắt dòng chứa key
+                        QByteArray keyLine = messageBuffer.mid(udpKeyPos, newlinePos - udpKeyPos);
 
-                    if (keyLine.size() == 41 && keyLine[40] == '\n') {
-                        QByteArray keyData = keyLine.mid(8, 32); // Skip "UDP_KEY|"
+                        qDebug() << "[CRYPTO] Found UDP_KEY line:" << keyLine;
 
-                        sharedKey.assign(keyData.begin(), keyData.end());
-                        cryptoReady = true;
-                        txCounter = 0;
-                        rxCounter = 0;
-                        rxWindowBitmap = 0;
+                        // Xóa khỏi buffer
+                        messageBuffer.remove(udpKeyPos, newlinePos - udpKeyPos + 1);
 
-                        qDebug() << "[CRYPTO] ✓ UDP encryption ready";
+                        if (keyLine.size() > 8) {
+                            // Lấy phần Base64 (Bỏ "UDP_KEY|")
+                            QByteArray b64Key = keyLine.mid(8);
 
-                        // Remove processed data
-                        messageBuffer.remove(udpKeyPos, 41);
-                        keyReceived = true;
+                            // Giải mã Base64 -> Binary
+                            QByteArray keyData = QByteArray::fromBase64(b64Key);
+
+                            if (keyData.size() == 32) {
+                                sharedKey.assign(keyData.begin(), keyData.end());
+                                cryptoReady = true;
+                                txCounter = 0;
+                                rxCounter = 0;
+                                rxWindowBitmap = 0;
+
+                                qDebug() << "[CRYPTO] ✓ UDP encryption ready (Base64 decoded)";
+                                keyReceived = true; // Đánh dấu đã nhận thành công
+                            } else {
+                                qWarning() << "[CRYPTO] Invalid key size after decode:" << keyData.size();
+                            }
+                        }
                     }
                 }
 
@@ -291,6 +302,11 @@ void VPNClient::disconnectFromServer()
     }
 
     if (tun.isOpened()) {
+        tun.setIPv6Status(true);
+        tun.close();
+    }
+
+    if (tun.isOpened()) {
         tun.close();
     }
 
@@ -318,6 +334,8 @@ void VPNClient::stopTUNTrafficGeneration()
     if (tunTrafficTimer) tunTrafficTimer->stop();
 }
 
+// Trong vpn_client.cpp
+
 void VPNClient::processTUNTraffic()
 {
     if (!authenticated || !tun.isOpened()) return;
@@ -329,8 +347,38 @@ void VPNClient::processTUNTraffic()
         int n = tun.readPacket(buffer, sizeof(buffer));
         if (n <= 0) break;
 
-        sendPacketToServer(QByteArray(buffer, n));
-        packetsRead++;
+        // === LOGIC LỌC VÀ CHUẨN HÓA GÓI TIN ===
+        char* sendData = buffer;
+        int sendSize = n;
+        bool shouldSend = false;
+
+        uint8_t firstByte = (uint8_t)buffer[0];
+
+        // TRƯỜNG HỢP 1: Raw IP Packet (IPv4 bắt đầu bằng 0x4...)
+        // Một số driver TAP ở chế độ đặc biệt có thể trả về cái này
+        if ((firstByte >> 4) == 4) {
+            shouldSend = true;
+        }
+        // TRƯỜNG HỢP 2: Ethernet Frame (Thường gặp trên Windows TAP)
+        // Header dài 14 bytes. Kiểm tra EtherType tại byte 12-13
+        // 0x08 0x00 là IPv4
+        else if (n > 14 && (uint8_t)buffer[12] == 0x08 && (uint8_t)buffer[13] == 0x00) {
+            // Kiểm tra byte đầu tiên của phần Payload (byte thứ 14)
+            uint8_t ipVer = (uint8_t)buffer[14] >> 4;
+            if (ipVer == 4) {
+                // Cắt bỏ 14 byte đầu (Ethernet Header)
+                sendData = buffer + 14;
+                sendSize = n - 14;
+                shouldSend = true;
+            }
+        }
+
+        // Chỉ gửi nếu là IPv4 hợp lệ
+        if (shouldSend) {
+            sendPacketToServer(QByteArray(sendData, sendSize));
+            packetsRead++;
+        }
+        // Các gói ARP, IPv6, rác sẽ bị Drop tại đây -> Server sẽ hết lỗi Invalid Argument
     }
 
     static int statsCounter = 0;
@@ -444,7 +492,6 @@ void VPNClient::onReadyRead() {
             totalRead += bytesRead;
             messageBuffer.append(QByteArray(buffer, bytesRead));
 
-            // ✅ Check for UDP_KEY BEFORE splitting by newline
             int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
             if (udpKeyPos != -1) {
                 int newlineAfterKey = messageBuffer.indexOf('\n', udpKeyPos);
@@ -452,15 +499,19 @@ void VPNClient::onReadyRead() {
                     QByteArray keyLine = messageBuffer.mid(udpKeyPos, newlineAfterKey - udpKeyPos);
                     messageBuffer.remove(udpKeyPos, newlineAfterKey - udpKeyPos + 1);
 
-                    if (keyLine.size() >= 40) {
-                        QByteArray keyData = keyLine.mid(8, 32);
+                    if (keyLine.size() > 8) {
+                        QByteArray b64Key = keyLine.mid(8);
+                        QByteArray keyData = QByteArray::fromBase64(b64Key);
+
                         if (keyData.size() == 32) {
                             sharedKey.assign(keyData.begin(), keyData.end());
                             cryptoReady = true;
                             txCounter = 0;
                             rxCounter = 0;
-                            qDebug() << "[CRYPTO] ✓ UDP encryption ready";
+                            qDebug() << "[CRYPTO] ✓ UDP encryption ready (Key received via Base64)";
                             setupUDPConnection();
+                        } else {
+                            qWarning() << "[CRYPTO] Invalid key size after Base64 decode:" << keyData.size();
                         }
                     }
                 }
@@ -555,6 +606,8 @@ void VPNClient::setupUDPConnection()
             tun.close();
             return;
         }
+
+        tun.setIPv6Status(false);
 
         qDebug() << "[TUN] ✓ Configured successfully";
         emit statusReceived("TUN interface configured with IP " + assignedVpnIP);

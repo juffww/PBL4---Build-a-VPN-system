@@ -36,7 +36,6 @@ TUNInterface::TUNInterface(const std::string& name)
     vpnIP(""), subnetMask(""), serverIP(""),
     bytesReceived(0), bytesSent(0) {
 #ifdef _WIN32
-    // KHỞI TẠO 2 BIẾN MỚI
     memset(&readOverlapped, 0, sizeof(readOverlapped));
     memset(&writeOverlapped, 0, sizeof(writeOverlapped));
 #endif
@@ -45,7 +44,6 @@ TUNInterface::TUNInterface(const std::string& name)
 #ifdef _WIN32
 
 TUNInterface::~TUNInterface() {
-    // cleanup nếu cần, hoặc để trống
 }
 std::string TUNInterface::findTAPAdapter() {
     HKEY adapterKey;
@@ -100,6 +98,29 @@ std::string TUNInterface::findTAPAdapter() {
     RegCloseKey(adapterKey);
     std::cerr << "[TUN] No TAP adapter found\n";
     return "";
+}
+
+void TUNInterface::setIPv6Status(bool enable) {
+#ifdef _WIN32
+    std::string status = enable ? "enabled" : "disabled";
+
+    // Cách 1: Tắt IPv6 trên TẤT CẢ các interface (Mạnh tay nhất để chặn leak triệt để)
+    // Lưu ý: Lệnh này cần quyền Administrator (bạn đã chạy app với quyền Admin rồi)
+    std::string cmd = "powershell -Command \"Get-NetAdapterBinding -ComponentID ms_tcpip6 | "
+                      "Set-NetAdapterBinding -Enabled:" + std::string(enable ? "$true" : "$false") + "\"";
+
+    std::cout << "[TUN] " << (enable ? "Enabling" : "Disabling") << " IPv6 globally to prevent leaks...\n";
+    executeCommand(cmd);
+
+    // Cách 2 (Dự phòng nếu máy không có Powershell): Dùng netsh cho các tên phổ biến
+    if (!enable) {
+        executeCommand("netsh interface ipv6 set interface \"Wi-Fi\" admin=disable >nul 2>&1");
+        executeCommand("netsh interface ipv6 set interface \"Ethernet\" admin=disable >nul 2>&1");
+    } else {
+        executeCommand("netsh interface ipv6 set interface \"Wi-Fi\" admin=enable >nul 2>&1");
+        executeCommand("netsh interface ipv6 set interface \"Ethernet\" admin=enable >nul 2>&1");
+    }
+#endif
 }
 
 std::string TUNInterface::getAdapterName() {
@@ -163,7 +184,6 @@ bool TUNInterface::create() {
 
     tunFd = (int)(intptr_t)handle;
 
-    // TẠO EVENT MỘT LẦN DUY NHẤT Ở ĐÂY
     readOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (readOverlapped.hEvent == NULL || writeOverlapped.hEvent == NULL) {
@@ -173,7 +193,6 @@ bool TUNInterface::create() {
         return false;
     }
 
-    // Set media status to connected
     ULONG status = TRUE;
     DWORD len;
     if (!DeviceIoControl(handle, TAP_WIN_IOCTL_SET_MEDIA_STATUS,
@@ -209,10 +228,9 @@ std::string TUNInterface::getInterfaceIndex(const std::string& adapterName) {
     }
     _pclose(pipe);
 
-    // Extract index (first number in line)
     std::istringstream iss(result);
     std::string idx;
-    iss >> idx; // First token is the index
+    iss >> idx;
 
     std::cout << "[TUN] Interface '" << adapterName << "' has index: " << idx << "\n";
     return idx;
@@ -221,7 +239,8 @@ std::string TUNInterface::getInterfaceIndex(const std::string& adapterName) {
 bool TUNInterface::configureClientMode() {
     if (!isOpen.load()) return false;
 
-    // ✅ CRITICAL: Get old gateway BEFORE any configuration
+    setIPv6Status(false);
+
     std::string oldGateway = getDefaultGateway();
 
     if (oldGateway.empty() || oldGateway == "0.0.0.0" || oldGateway == "10.8.0.1") {
@@ -247,7 +266,6 @@ bool TUNInterface::configureClientMode() {
 
     HANDLE handle = (HANDLE)(intptr_t)tunFd;
 
-    // ✅ Step 1: Configure TAP Point-to-Point
     ULONG ep[3];
     DWORD len;
 
@@ -264,7 +282,6 @@ bool TUNInterface::configureClientMode() {
     std::cout << "[TUN] ✓ Point-to-Point configured\n";
     Sleep(500);
 
-    // ✅ Step 2: Set IP WITHOUT gateway first
     std::ostringstream ipCmd;
     ipCmd << "netsh interface ip set address name=\"" << interfaceName
           << "\" source=static addr=" << vpnIP
@@ -278,7 +295,6 @@ bool TUNInterface::configureClientMode() {
     std::cout << "[TUN] ✓ IP address configured\n";
     Sleep(1000);
 
-    // ✅ Step 3: Get interface index (metric sẽ dùng index thay vì tên)
     std::string interfaceIndex = getInterfaceIndex(interfaceName);
     if (interfaceIndex.empty()) {
         std::cerr << "[TUN] ✗ Cannot get interface index\n";
@@ -286,13 +302,11 @@ bool TUNInterface::configureClientMode() {
     }
     std::cout << "[TUN] Interface index: " << interfaceIndex << "\n";
 
-    // ✅ Step 4: CRITICAL FIX - Save old gateway
     if (!serverIP.empty() && !oldGateway.empty() && oldGateway != "0.0.0.0") {
         std::ostringstream saveCmd;
         saveCmd << "echo " << oldGateway << " > C:\\vpn_old_gateway.txt";
         executeCommand(saveCmd.str());
 
-        // Protect server route FIRST (before changing default route)
         executeCommand("route delete " + serverIP + " >nul 2>&1");
         Sleep(200);
 
@@ -306,11 +320,9 @@ bool TUNInterface::configureClientMode() {
 
     Sleep(500);
 
-    // ✅ Step 5: Delete old default routes
     executeCommand("route delete 0.0.0.0 >nul 2>&1");
     Sleep(200);
 
-    // ✅ Step 6: Add VPN default route (CÚ PHÁP ĐÚNG)
     std::ostringstream defaultRouteCmd;
     defaultRouteCmd << "route add 0.0.0.0 mask 0.0.0.0 10.8.0.1 IF " << interfaceIndex;
 
@@ -323,7 +335,6 @@ bool TUNInterface::configureClientMode() {
 
     Sleep(500);
 
-    // ✅ Step 7: Add VPN subnet route
     std::ostringstream vpnRouteCmd;
     vpnRouteCmd << "route delete 10.8.0.0 >nul 2>&1";
     executeCommand(vpnRouteCmd.str());
@@ -336,7 +347,6 @@ bool TUNInterface::configureClientMode() {
 
     Sleep(500);
 
-    // ✅ Step 8: Add split routes as backup (covers all IPs)
     executeCommand("route delete 0.0.0.0 mask 128.0.0.0 >nul 2>&1");
     executeCommand("route delete 128.0.0.0 mask 128.0.0.0 >nul 2>&1");
     Sleep(200);
@@ -349,7 +359,6 @@ bool TUNInterface::configureClientMode() {
         std::cout << "[TUN] ✓ Split routes added\n";
     }
 
-    // ✅ Step 9: Set DNS
     std::ostringstream dns1Cmd, dns2Cmd;
     dns1Cmd << "netsh interface ip set dns name=\"" << interfaceName
             << "\" source=static addr=8.8.8.8 register=none validate=no";
@@ -358,13 +367,21 @@ bool TUNInterface::configureClientMode() {
 
     executeCommand(dns1Cmd.str());
     executeCommand(dns2Cmd.str());
+
+    // === THÊM ĐOẠN NÀY ĐỂ FIX DNS LEAK ===
+    // Ép buộc traffic đến 8.8.8.8 phải đi qua VPN Gateway (10.8.0.1)
+    // Metric 1 đảm bảo ưu tiên cao nhất
+    std::ostringstream dnsRouteCmd;
+    dnsRouteCmd << "route add 8.8.8.8 mask 255.255.255.255 10.8.0.1 metric 1 IF " << interfaceIndex;
+    if (executeCommand(dnsRouteCmd.str())) {
+        std::cout << "[TUN] ✓ DNS Leak protection active (Route to 8.8.8.8 locked to VPN)\n";
+    }
+
     std::cout << "[TUN] ✓ DNS configured\n";
 
-    // ✅ Step 10: Flush caches
     executeCommand("ipconfig /flushdns");
     executeCommand("arp -d *");
 
-    // ✅ Step 11: Set interface metric (KHÔNG dùng netsh - dùng route)
     std::ostringstream metricCmd;
     metricCmd << "netsh interface ip set interface \"" << interfaceName
               << "\" metric=1";
@@ -372,7 +389,6 @@ bool TUNInterface::configureClientMode() {
 
     std::cout << "[TUN] ✓ Client mode fully configured\n";
 
-    // ✅ Final verification
     std::cout << "\n[TUN] === VERIFICATION ===\n";
     system(("netsh interface ip show config name=\"" + interfaceName + "\"").c_str());
     std::cout << "\n[TUN] Current default routes:\n";
@@ -394,7 +410,6 @@ std::string TUNInterface::getDefaultGateway() {
     if (GetAdaptersInfo(adapterInfo, &bufferSize) == NO_ERROR) {
         PIP_ADAPTER_INFO adapter = adapterInfo;
         while (adapter) {
-            // ✅ Skip TAP adapters and loopback
             std::string adapterName = adapter->Description;
             if (adapterName.find("TAP-Windows") != std::string::npos ||
                 adapterName.find("TAP-Win32") != std::string::npos) {
@@ -402,15 +417,13 @@ std::string TUNInterface::getDefaultGateway() {
                 continue;
             }
 
-            // ✅ Look for active Ethernet or WiFi adapter
             if (adapter->Type == MIB_IF_TYPE_ETHERNET ||
                 adapter->Type == IF_TYPE_IEEE80211) {
 
                 std::string gw = adapter->GatewayList.IpAddress.String;
 
-                // ✅ Filter out VPN gateways and invalid gateways
                 if (gw != "0.0.0.0" && !gw.empty() &&
-                    gw.find("10.8.0") == std::string::npos) {  // Skip VPN subnet
+                    gw.find("10.8.0") == std::string::npos) {
                     gateway = gw;
                     std::cout << "[TUN] Found gateway " << gateway
                               << " on " << adapter->Description << "\n";
@@ -428,8 +441,6 @@ std::string TUNInterface::getDefaultGateway() {
 std::string TUNInterface::getDefaultInterface() {
     return interfaceName;
 }
-
-// tun_interface_win.cpp
 
 int TUNInterface::readPacket(char* buffer, int maxSize) {
     if (!isOpen.load() || tunFd < 0) return -1;
@@ -516,7 +527,8 @@ void TUNInterface::close() {
 
     std::cout << "[TUN] Cleaning up interface..." << std::endl;
 
-    // Restore old gateway
+    setIPv6Status(true);
+
     std::ifstream gwFile("C:\\vpn_old_gateway.txt");
     std::string oldGateway;
     if (gwFile.is_open()) {
