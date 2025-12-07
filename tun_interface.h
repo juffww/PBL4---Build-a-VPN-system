@@ -5,10 +5,7 @@
 #include <atomic>
 #include <cstdint>
 
-#ifdef _WIN32
 #include <windows.h>
-
-#endif
 
 class TUNInterface {
 private:
@@ -20,6 +17,8 @@ private:
     std::string serverIP;
     uint64_t bytesReceived;
     uint64_t bytesSent;
+
+    HANDLE readWaitEvent;
 
     bool configureClientMode();
 
@@ -39,6 +38,8 @@ public:
     bool setRoutes();
     std::string getDefaultGateway();
     std::string getDefaultInterface();
+
+    HANDLE getReadWaitEvent() const;
 
     bool executeCommand(const std::string& cmd);
 

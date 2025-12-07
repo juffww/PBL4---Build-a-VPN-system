@@ -6,6 +6,11 @@
 #include <QUdpSocket>
 #include <QTimer>
 #include <QString>
+#include <thread>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <vector>
+#include <atomic>
 #include <QNetworkAccessManager>
 #include <openssl/evp.h>
 #include "tun_interface.h"
@@ -53,7 +58,6 @@ private slots:
     void sendUdpHandshake();
     void startUdpHandshake();
     void onError(QAbstractSocket::SocketError socketError);
-    void processTUNTraffic();
     void requestUDPKey();
 
 private:
@@ -61,12 +65,20 @@ private:
     void sendMessage(const QString& message);
     void parseServerMessage(const QString& message);
 
-    void sendPacketToServer(const QByteArray& packetData);
     void writePacketToTUN(const QByteArray& packetData);
 
     bool encryptPacket(const QByteArray& plain, QByteArray& encrypted);
     bool decryptPacket(const QByteArray& encrypted, QByteArray& plain);
     void setupUDPConnection();
+
+    void tunWorker();
+
+    SOCKET nativeUdpSocket = INVALID_SOCKET;
+    struct sockaddr_in nativeServerAddr;
+
+    std::vector<uint8_t> cryptoBuffer;
+    std::vector<uint8_t> tagBuffer;
+    std::vector<uint8_t> udpSendBuffer;
 
     QTcpSocket *socket;
     QTimer *pingTimer;
@@ -85,7 +97,8 @@ private:
     int clientId;
     QTimer *udpHandshakeTimer;
 
-    QTimer* tunTrafficTimer;
+    std::thread tunThread;
+    std::atomic<bool> tunThreadRunning;
     QNetworkAccessManager* networkManager;
     quint64 totalBytesReceived;
     quint64 totalBytesSent;

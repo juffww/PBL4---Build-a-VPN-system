@@ -26,7 +26,7 @@ static std::string getOpenSSLError() {
 VPNClient::VPNClient(QObject *parent)
     : QObject(parent), udpServerPort(0), udpReady(false),
     authenticated(false), serverPort(0), clientId(0),
-    udpHandshakeTimer(nullptr), tunTrafficTimer(nullptr),
+    udpHandshakeTimer(nullptr),
     networkManager(nullptr), totalBytesReceived(0),
     totalBytesSent(0), tlsWrapper(nullptr),
     pendingPacketSize(0), isReadingPacketData(false), cryptoReady(false),
@@ -47,6 +47,9 @@ VPNClient::VPNClient(QObject *parent)
     tlsReadPoller = new QTimer(this);
     tlsReadPoller->setInterval(10);
 
+    cryptoBuffer.resize(65536);
+    udpSendBuffer.resize(65536);
+
     encryptCtx = EVP_CIPHER_CTX_new();
     decryptCtx = EVP_CIPHER_CTX_new();
 
@@ -63,11 +66,6 @@ VPNClient::VPNClient(QObject *parent)
     connect(udpSocket, &QUdpSocket::readyRead, this, &VPNClient::onUdpReadyRead);
 
     pingTimer->setInterval(30000);
-
-    tunTrafficTimer = new QTimer(this);
-    tunTrafficTimer->setInterval(1);
-    connect(tunTrafficTimer, &QTimer::timeout, this, &VPNClient::processTUNTraffic);
-
 }
 
 VPNClient::~VPNClient()
@@ -251,10 +249,10 @@ void VPNClient::onConnected()
 
 void VPNClient::disconnectFromServer()
 {
-
     pingTimer->stop();
-    if (tunTrafficTimer) tunTrafficTimer->stop();
     if (tlsReadPoller) tlsReadPoller->stop();
+
+    stopTUNTrafficGeneration();
 
     if (udpHandshakeTimer && udpHandshakeTimer->isActive()) {
         udpHandshakeTimer->stop();
@@ -285,15 +283,15 @@ void VPNClient::disconnectFromServer()
         tun.close();
     }
 
-    if (tun.isOpened()) {
-        tun.close();
-    }
-
     if (socket->state() != QAbstractSocket::UnconnectedState) {
         sendMessage("DISCONNECT");
         socket->disconnectFromHost();
-        socket->waitForDisconnected(3000);
+        if (socket->state() != QAbstractSocket::UnconnectedState) {
+            socket->waitForDisconnected(1000); // Giảm xuống 1000ms cho nhanh
+        }
     }
+
+    qDebug() << "[CLIENT] Disconnected completely.";
 }
 
 bool VPNClient::isConnected() const
@@ -301,79 +299,113 @@ bool VPNClient::isConnected() const
     return socket->state() == QAbstractSocket::ConnectedState && authenticated;
 }
 
-void VPNClient::startTUNTrafficGeneration()
-{
-    if (authenticated && tunTrafficTimer) {
-        tunTrafficTimer->start(1);
+void VPNClient::startTUNTrafficGeneration() {
+    if (authenticated && !tunThreadRunning) {
+        tunThreadRunning = true;
+        tunThread = std::thread(&VPNClient::tunWorker, this);
     }
 }
 
-void VPNClient::stopTUNTrafficGeneration()
-{
-    if (tunTrafficTimer) tunTrafficTimer->stop();
+void VPNClient::stopTUNTrafficGeneration() {
+    tunThreadRunning = false;
+    if (tunThread.joinable()) {
+        tunThread.join();
+    }
 }
 
+void VPNClient::tunWorker() {
+    char readBuffer[4096];
+    HANDLE waitEvent = tun.getReadWaitEvent();
 
-void VPNClient::processTUNTraffic()
-{
-    if (!authenticated || !tun.isOpened()) return;
+    qDebug() << "[WORKER] Started high-performance data plane";
 
-    char buffer[4096];
-    int packetsRead = 0;
+    int debugCount = 0; // Để tránh spam log
 
-    while (packetsRead < 100) {
-        int n = tun.readPacket(buffer, sizeof(buffer));
-        if (n <= 0) break;
+    while (tunThreadRunning && tun.isOpened()) {
+        DWORD waitResult = WaitForSingleObject(waitEvent, 100);
 
-        uint8_t ipVersion = ((uint8_t)buffer[0]) >> 4;
+        if (waitResult == WAIT_OBJECT_0) {
+            while (true) {
+                int n = tun.readPacket(readBuffer, sizeof(readBuffer));
+                if (n <= 0) break;
 
-        if (ipVersion == 4 && n >= 20) {
-            sendPacketToServer(QByteArray(buffer, n));
-            packetsRead++;
-        } else {
-            static int dropCount = 0;
-            if (++dropCount % 100 == 0) {
-                qWarning() << "[TUN] Dropped" << dropCount << "invalid packets";
+                // --- DEBUG LOGGING ---
+                if (debugCount < 10) {
+                    qDebug() << "[WORKER] Read" << n << "bytes from TUN. Encrypting...";
+                }
+
+                if (!authenticated || !cryptoReady) continue;
+
+                int plainSize = n;
+                int maxEncryptedSize = plainSize + 28;
+
+                if (udpSendBuffer.size() < (8 + maxEncryptedSize)) {
+                    udpSendBuffer.resize(8 + maxEncryptedSize);
+                }
+
+                uint8_t* sendPtr = udpSendBuffer.data();
+
+                std::vector<uint8_t> iv(12);
+                uint64_t counter = txCounter++;
+                memcpy(iv.data(), &counter, 8);
+
+                int len = 0;
+                int cipherLen = 0;
+
+                // Reset context
+                if (EVP_EncryptInit_ex(encryptCtx, nullptr, nullptr, nullptr, nullptr) != 1 ||
+                    EVP_EncryptInit_ex(encryptCtx, nullptr, nullptr, sharedKey.data(), iv.data()) != 1) {
+                    qWarning() << "[WORKER] Encrypt Init Failed!";
+                    continue;
+                }
+
+                uint8_t* destCipher = sendPtr + 36;
+
+                if (EVP_EncryptUpdate(encryptCtx, destCipher, &len, (const uint8_t*)readBuffer, plainSize) != 1) {
+                    qWarning() << "[WORKER] Encrypt Update Failed!";
+                    continue;
+                }
+                cipherLen = len;
+
+                if (EVP_EncryptFinal_ex(encryptCtx, destCipher + len, &len) != 1) {
+                    qWarning() << "[WORKER] Encrypt Final Failed!";
+                    continue;
+                }
+                cipherLen += len;
+
+                uint8_t tag[16];
+                if (EVP_CIPHER_CTX_ctrl(encryptCtx, EVP_CTRL_GCM_GET_TAG, 16, tag) != 1) continue;
+
+                *(qint32*)sendPtr = clientId;
+                qint32 payloadSize = 12 + 16 + cipherLen;
+                *(qint32*)(sendPtr + 4) = payloadSize;
+                memcpy(sendPtr + 8, iv.data(), 12);
+                memcpy(sendPtr + 20, tag, 16);
+
+                int totalPacketSize = 8 + payloadSize;
+
+                // Gửi dữ liệu
+                int sent = sendto(nativeUdpSocket,
+                                  (const char*)sendPtr,
+                                  totalPacketSize,
+                                  0,
+                                  (struct sockaddr*)&nativeServerAddr,
+                                  sizeof(nativeServerAddr));
+
+                if (sent > 0) {
+                    totalBytesSent += n;
+                    if (debugCount < 10) {
+                        qDebug() << "[WORKER] Sent" << sent << "bytes via UDP to Server";
+                        debugCount++;
+                    }
+                } else {
+                    // --- QUAN TRỌNG: IN LỖI NẾU GỬI THẤT BẠI ---
+                    int err = WSAGetLastError();
+                    qWarning() << "[WORKER] UDP Send failed. Error code:" << err;
+                }
             }
         }
     }
-
-    static int statsCounter = 0;
-    if (++statsCounter >= 100) {
-        emit trafficStatsUpdated(totalBytesSent, totalBytesReceived);
-        statsCounter = 0;
-    }
-}
-
-void VPNClient::sendPacketToServer(const QByteArray& packetData)
-{
-    if (!authenticated || !cryptoReady || packetData.size() > 1500) return;
-
-    QByteArray encryptedData;
-    if (!encryptPacket(packetData, encryptedData)) {
-        return;
-    }
-
-    if (udpReady && udpSocket->state() == QAbstractSocket::BoundState) {
-        int totalSize = 8 + encryptedData.size();
-        QByteArray udpPacket(totalSize, 0);
-
-        *(qint32*)udpPacket.data() = clientId;
-        *(qint32*)(udpPacket.data() + 4) = encryptedData.size();
-        memcpy(udpPacket.data() + 8, encryptedData.constData(), encryptedData.size());
-
-        qint64 sent = udpSocket->writeDatagram(udpPacket, udpServerAddr, udpServerPort);
-
-        if (sent > 0) {
-            totalBytesSent += packetData.size();
-        }
-        return;
-    }
-
-    // static int tcpFallbackCount = 0;
-    // if (++tcpFallbackCount % 100 == 0) {
-    //     qWarning() << "[WARN] UDP not ready, dropped" << tcpFallbackCount << "packets";
-    // }
 }
 
 void VPNClient::onUdpReadyRead()
@@ -526,6 +558,21 @@ void VPNClient::setupUDPConnection()
             emit error("UDP bind failed: " + udpSocket->errorString());
             return;
         }
+    }
+
+    nativeUdpSocket = udpSocket->socketDescriptor();
+    if (nativeUdpSocket == INVALID_SOCKET) {
+        qWarning() << "[UDP] Failed to get native socket descriptor";
+        return;
+    }
+
+    memset(&nativeServerAddr, 0, sizeof(nativeServerAddr));
+    nativeServerAddr.sin_family = AF_INET;
+    nativeServerAddr.sin_port = htons(udpServerPort);
+
+    std::string ipStr = udpServerAddr.toString().toStdString();
+    if (inet_pton(AF_INET, ipStr.c_str(), &nativeServerAddr.sin_addr) <= 0) {
+        qWarning() << "[UDP] Invalid server IP for native socket";
     }
 
     if (!tun.isOpened()) {
@@ -720,57 +767,69 @@ void VPNClient::sendMessage(const QString& message)
 
 bool VPNClient::encryptPacket(const QByteArray& plain, QByteArray& encrypted)
 {
+    // Kiểm tra điều kiện
     if (!cryptoReady || sharedKey.empty() || !encryptCtx) return false;
 
-    std::vector<uint8_t> iv(12);
+    // TỐI ƯU 1: Dùng mảng stack cho IV (nhanh hơn std::vector)
+    uint8_t iv[12];
     uint64_t counter = txCounter++;
-    memcpy(iv.data(), &counter, 8);
+    memcpy(iv, &counter, 8);
+    memset(iv + 8, 0, 4); // 4 byte cuối set bằng 0
 
-    std::vector<uint8_t> ciphertext(plain.size() + 16);
-    std::vector<uint8_t> tag(16);
     int len = 0, cipherLen = 0;
+    int plainSize = plain.size();
 
-    if (EVP_EncryptInit_ex(encryptCtx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1 ||
-        EVP_CIPHER_CTX_ctrl(encryptCtx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1 ||
-        EVP_EncryptInit_ex(encryptCtx, nullptr, nullptr, sharedKey.data(), iv.data()) != 1) {
+    // Đảm bảo buffer thành viên đã được resize đủ dùng (chỉ làm 1 lần lúc khởi tạo)
+    if (tagBuffer.size() != 16) tagBuffer.resize(16);
+    // cryptoBuffer đã resize ở constructor (64KB) nên không cần check lại
+
+    // 1. Init Context
+    // Reset context (nullptr) nhanh hơn tạo mới
+    if (EVP_EncryptInit_ex(encryptCtx, nullptr, nullptr, nullptr, nullptr) != 1 ||
+        EVP_EncryptInit_ex(encryptCtx, nullptr, nullptr, sharedKey.data(), iv) != 1) {
         return false;
     }
 
-    if (EVP_EncryptUpdate(encryptCtx, ciphertext.data(), &len,
-                          (const uint8_t*)plain.constData(), plain.size()) != 1) {
-        return false;
-    }
+    // 2. Encrypt (Ghi thẳng vào cryptoBuffer - buffer tái sử dụng)
+    if (EVP_EncryptUpdate(encryptCtx, cryptoBuffer.data(), &len,
+                          (const uint8_t*)plain.constData(), plainSize) != 1) return false;
     cipherLen = len;
 
-    if (EVP_EncryptFinal_ex(encryptCtx, ciphertext.data() + len, &len) != 1 ||
-        EVP_CIPHER_CTX_ctrl(encryptCtx, EVP_CTRL_GCM_GET_TAG, 16, tag.data()) != 1) {
-        return false;
-    }
-
+    // 3. Finalize
+    if (EVP_EncryptFinal_ex(encryptCtx, cryptoBuffer.data() + len, &len) != 1) return false;
     cipherLen += len;
-    ciphertext.resize(cipherLen);
 
+    // 4. Get Tag (Ghi vào tagBuffer thành viên)
+    if (EVP_CIPHER_CTX_ctrl(encryptCtx, EVP_CTRL_GCM_GET_TAG, 16, tagBuffer.data()) != 1) return false;
 
-    encrypted.resize(28 + ciphertext.size());
-    memcpy(encrypted.data(), iv.data(), 12);
-    memcpy(encrypted.data() + 12, tag.data(), 16);
-    memcpy(encrypted.data() + 28, ciphertext.data(), ciphertext.size());
+    // 5. Đóng gói kết quả vào QByteArray đầu ra
+    // Cấu trúc: [IV 12 bytes][Tag 16 bytes][Ciphertext]
+    encrypted.resize(28 + cipherLen);
+
+    // Copy IV
+    memcpy(encrypted.data(), iv, 12);
+    // Copy Tag (Sửa lỗi: dùng tagBuffer thay vì tag)
+    memcpy(encrypted.data() + 12, tagBuffer.data(), 16);
+    // Copy Ciphertext
+    memcpy(encrypted.data() + 28, cryptoBuffer.data(), cipherLen);
 
     return true;
 }
 
-
 bool VPNClient::decryptPacket(const QByteArray& encrypted, QByteArray& plain)
 {
+    // Kiểm tra độ dài tối thiểu (Header 28 bytes: 12 IV + 16 Tag)
     if (!cryptoReady || sharedKey.empty() || !decryptCtx || encrypted.size() < 28) {
         return false;
     }
 
+    // TỐI ƯU 2: Dùng con trỏ trực tiếp (Zero-copy), không tạo std::vector phụ
     const uint8_t* iv_ptr = (const uint8_t*)encrypted.constData();
     const uint8_t* tag_ptr = (const uint8_t*)encrypted.constData() + 12;
     const uint8_t* ciphertext_ptr = (const uint8_t*)encrypted.constData() + 28;
     int ciphertext_len = encrypted.size() - 28;
 
+    // --- Logic chống tấn công phát lại (Anti-Replay) ---
     uint64_t nonce = 0;
     memcpy(&nonce, iv_ptr, 8);
 
@@ -781,59 +840,52 @@ bool VPNClient::decryptPacket(const QByteArray& encrypted, QByteArray& plain)
         } else {
             rxWindowBitmap = 0;
         }
-
         rxWindowBitmap |= 1;
-
         rxCounter = nonce;
     }
     else {
         uint64_t diff = rxCounter - nonce;
-
-        if (diff >= 64) {
-            // qWarning() << "[SECURITY] Rejected (Too Old): nonce:" << nonce << "rxCounter:" << rxCounter;
-            return false;
-        }
-
-        uint64_t bit = 1ULL << diff; // Dùng 1ULL để đảm bảo là 64-bit shift
-        if ((rxWindowBitmap & bit) != 0) {
-            // qWarning() << "[SECURITY] Rejected (Replay): nonce:" << nonce << "rxCounter:" << rxCounter;
-            return false; // Gói lặp lại, từ chối
-        }
-
-        // Đánh dấu bit này là "đã xử lý"
+        if (diff >= 64) return false; // Gói tin quá cũ
+        uint64_t bit = 1ULL << diff;
+        if ((rxWindowBitmap & bit) != 0) return false; // Gói tin đã nhận rồi (Replay)
         rxWindowBitmap |= bit;
-
     }
+    // ---------------------------------------------------
 
-    plain.resize(ciphertext_len + 16);
+    // Resize buffer đầu ra
+    plain.resize(ciphertext_len + 16); // +16 dự phòng padding (dù GCM ko cần nhưng an toàn)
     int len = 0, plainLen = 0;
 
+    // 1. Init Decrypt
     if (EVP_DecryptInit_ex(decryptCtx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1 ||
         EVP_CIPHER_CTX_ctrl(decryptCtx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1 ||
         EVP_DecryptInit_ex(decryptCtx, nullptr, nullptr, sharedKey.data(), iv_ptr) != 1) {
         return false;
     }
 
+    // 2. Update (Giải mã thẳng từ con trỏ ciphertext_ptr)
     if (EVP_DecryptUpdate(decryptCtx, (uint8_t*)plain.data(), &len,
                           ciphertext_ptr, ciphertext_len) != 1) {
         return false;
     }
     plainLen = len;
 
+    // 3. Set Tag (Kiểm tra tính toàn vẹn)
     if (EVP_CIPHER_CTX_ctrl(decryptCtx, EVP_CTRL_GCM_SET_TAG, 16, (void*)tag_ptr) != 1) {
         return false;
     }
 
+    // 4. Finalize
     int ret = EVP_DecryptFinal_ex(decryptCtx, (uint8_t*)plain.data() + len, &len);
 
     if (ret <= 0) {
-        // qWarning() << "[CRYPTO] Decrypt failed: Tag mismatch or corrupted packet.";
         plain.clear();
+        // std::cerr << "Decryption failed (Bad Tag)\n"; // Uncomment để debug nếu cần
         return false;
     }
 
     plainLen += len;
-    plain.resize(plainLen);
+    plain.resize(plainLen); // Resize về kích thước thật
 
     return true;
 }

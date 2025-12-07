@@ -396,59 +396,59 @@ void MainWindow::checkCurrentIP()
     getPublicIP();
 }
 
-// QString MainWindow::getCurrentLocalIP()
-// {
-//     QString localIP = "127.0.0.1";
-
-//     QList<QHostAddress> addresses = QNetworkInterface::allAddresses();
-//     for (const QHostAddress &address : addresses) {
-//         if (address.protocol() == QAbstractSocket::IPv4Protocol &&
-//             address != QHostAddress::LocalHost) {
-//             localIP = address.toString();
-//             break;
-//         }
-//     }
-
-//     return localIP;
-// }
 QString MainWindow::getCurrentLocalIP()
 {
     QString localIP = "127.0.0.1";
 
-    QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
-
-    for (const QNetworkInterface &interface : interfaces) {
-        if (!(interface.flags() & QNetworkInterface::IsUp) ||
-            !(interface.flags() & QNetworkInterface::IsRunning) ||
-            (interface.flags() & QNetworkInterface::IsLoopBack)) {
-            continue;
-        }
-
-        QString name = interface.humanReadableName();
-        if (name.contains("MyVPN", Qt::CaseInsensitive) ||
-            name.contains("Wintun", Qt::CaseInsensitive) ||
-            name.contains("TAP", Qt::CaseInsensitive)) {
-            continue;
-        }
-
-        QList<QNetworkAddressEntry> entries = interface.addressEntries();
-        for (const QNetworkAddressEntry &entry : entries) {
-            QHostAddress ip = entry.ip();
-
-            if (ip.protocol() != QAbstractSocket::IPv4Protocol) continue;
-
-            QString ipString = ip.toString();
-
-            if (ipString.startsWith("10.8.0.")) {
-                continue;
-            }
-
-            return ipString;
+    QList<QHostAddress> addresses = QNetworkInterface::allAddresses();
+    for (const QHostAddress &address : addresses) {
+        if (address.protocol() == QAbstractSocket::IPv4Protocol &&
+            address != QHostAddress::LocalHost) {
+            localIP = address.toString();
+            break;
         }
     }
 
     return localIP;
 }
+// QString MainWindow::getCurrentLocalIP()
+// {
+//     QString localIP = "127.0.0.1";
+
+//     QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
+
+//     for (const QNetworkInterface &interface : interfaces) {
+//         if (!(interface.flags() & QNetworkInterface::IsUp) ||
+//             !(interface.flags() & QNetworkInterface::IsRunning) ||
+//             (interface.flags() & QNetworkInterface::IsLoopBack)) {
+//             continue;
+//         }
+
+//         QString name = interface.humanReadableName();
+//         if (name.contains("MyVPN", Qt::CaseInsensitive) ||
+//             name.contains("Wintun", Qt::CaseInsensitive) ||
+//             name.contains("TAP", Qt::CaseInsensitive)) {
+//             continue;
+//         }
+
+//         QList<QNetworkAddressEntry> entries = interface.addressEntries();
+//         for (const QNetworkAddressEntry &entry : entries) {
+//             QHostAddress ip = entry.ip();
+
+//             if (ip.protocol() != QAbstractSocket::IPv4Protocol) continue;
+
+//             QString ipString = ip.toString();
+
+//             if (ipString.startsWith("10.8.0.")) {
+//                 continue;
+//             }
+
+//             return ipString;
+//         }
+//     }
+
+//     return localIP;
+// }
 
 void MainWindow::getPublicIP()
 {
