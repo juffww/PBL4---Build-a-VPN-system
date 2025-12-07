@@ -1,7 +1,6 @@
 #include <QRandomGenerator>
 #include <QDateTime>
 #include "vpn_client.h"
-// #include "crypto_client.h" // Không còn cần thiết nếu bạn đã xóa crypto_client.h
 #include <QHostAddress>
 #include <QDebug>
 #include <QThread>
@@ -368,14 +367,13 @@ void VPNClient::sendPacketToServer(const QByteArray& packetData)
         if (sent > 0) {
             totalBytesSent += packetData.size();
         }
-        return; // ✅ CRITICAL: RETURN ngay, không fallback TCP
+        return;
     }
 
-    // Chỉ log warning thay vì gửi qua TCP
-    static int tcpFallbackCount = 0;
-    if (++tcpFallbackCount % 100 == 0) {
-        qWarning() << "[WARN] UDP not ready, dropped" << tcpFallbackCount << "packets";
-    }
+    // static int tcpFallbackCount = 0;
+    // if (++tcpFallbackCount % 100 == 0) {
+    //     qWarning() << "[WARN] UDP not ready, dropped" << tcpFallbackCount << "packets";
+    // }
 }
 
 void VPNClient::onUdpReadyRead()
@@ -396,7 +394,6 @@ void VPNClient::onUdpReadyRead()
         qint32 recvClientId = *(qint32*)datagram.data();
         qint32 encryptedSize = *(qint32*)(datagram.data() + 4);
 
-        // Handshake ACK
         if (recvClientId == clientId && encryptedSize == 0) {
             if (udpHandshakeTimer && udpHandshakeTimer->isActive()) {
                 udpHandshakeTimer->stop();
@@ -408,7 +405,6 @@ void VPNClient::onUdpReadyRead()
             continue;
         }
 
-        // ✓ DECRYPT DATA PACKET
         if (recvClientId == clientId && encryptedSize > 0 && encryptedSize < 65536) {
             if (datagram.size() >= (8 + encryptedSize)) {
                 QByteArray encryptedPacket = datagram.mid(8, encryptedSize);
@@ -440,7 +436,7 @@ void VPNClient::onReadyRead() {
 
     char buffer[4096];
     int totalRead = 0;
-    int maxReads = 10; // Giới hạn số lần đọc mỗi lần trigger
+    int maxReads = 10;
 
     for (int i = 0; i < maxReads; i++) {
         int bytesRead = tlsWrapper->recv(buffer, sizeof(buffer));
@@ -474,7 +470,6 @@ void VPNClient::onReadyRead() {
                 }
             }
 
-            // Process text messages
             int newlinePos;
             while ((newlinePos = messageBuffer.indexOf('\n')) != -1) {
                 QByteArray line = messageBuffer.left(newlinePos);
@@ -487,7 +482,6 @@ void VPNClient::onReadyRead() {
                 emit messageReceived(message);
             }
 
-            // ✅ CRITICAL: Nếu không còn data trong SSL buffer, thoát ngay
             if (SSL_pending(tlsWrapper->getSSL()) == 0) {
                 break;
             }
@@ -497,15 +491,13 @@ void VPNClient::onReadyRead() {
             socket->disconnectFromHost();
             break;
         }
-        else { // bytesRead < 0
+        else {
             int sslError = SSL_get_error(tlsWrapper->getSSL(), bytesRead);
 
-            // ✅ WANT_READ/WANT_WRITE là bình thường với non-blocking socket
             if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
-                break; // Chờ event tiếp theo
+                break;
             }
 
-            // ✅ Log errors khác
             if (sslError != SSL_ERROR_ZERO_RETURN) {
                 qWarning() << "[TLS] SSL Error:" << sslError;
             }
@@ -513,7 +505,6 @@ void VPNClient::onReadyRead() {
         }
     }
 
-    // ✅ CRITICAL: Giới hạn buffer size để tránh memory leak
     if (messageBuffer.size() > 65536) {
         qWarning() << "[SECURITY] Message buffer overflow, clearing";
         messageBuffer.clear();
@@ -527,7 +518,6 @@ void VPNClient::setupUDPConnection()
     qDebug() << "[SETUP] assignedVpnIP:" << assignedVpnIP;
     qDebug() << "[SETUP] udpServerPort:" << udpServerPort;
 
-    // 1. Bind UDP socket
     if (udpSocket->state() != QAbstractSocket::BoundState) {
         if (udpSocket->bind(QHostAddress::AnyIPv4, 0)) {
             qDebug() << "[UDP] ✓ Bound to local port" << udpSocket->localPort();
@@ -538,7 +528,6 @@ void VPNClient::setupUDPConnection()
         }
     }
 
-    // 2. Setup TUN interface FIRST (before UDP handshake)
     if (!tun.isOpened()) {
         qDebug() << "[TUN] Creating TAP adapter...";
 
@@ -550,7 +539,6 @@ void VPNClient::setupUDPConnection()
 
         qDebug() << "[TUN] ✓ TAP device created";
 
-        // Configure TUN with assigned VPN IP
         QString serverIP = serverHost; // Use the server's hostname/IP
         qDebug() << "[TUN] Configuring: VPN_IP=" << assignedVpnIP
                  << " SERVER_IP=" << serverIP;
@@ -572,7 +560,6 @@ void VPNClient::setupUDPConnection()
         qDebug() << "[TUN] Already opened";
     }
 
-    // 3. Start UDP handshake
     if (udpServerPort > 0 && !udpServerAddr.isNull()) {
         qDebug() << "[UDP] Starting handshake to" << udpServerAddr.toString() << ":" << udpServerPort;
         startUdpHandshake();
@@ -581,7 +568,6 @@ void VPNClient::setupUDPConnection()
         qWarning() << "[UDP] Invalid server address or port";
     }
 
-    // 4. Start TUN traffic processing
     qDebug() << "[TRAFFIC] Starting TUN traffic processing...";
     startTUNTrafficGeneration();
 
@@ -597,7 +583,6 @@ void VPNClient::parseServerMessage(const QString& message)
         authenticated = true;
         //pingTimer->start();
 
-        // Parse VPN_IP
         if (message.contains("VPN_IP:")) {
             int start = message.indexOf("VPN_IP:") + 7;
             int end = message.indexOf("|", start);
@@ -607,7 +592,6 @@ void VPNClient::parseServerMessage(const QString& message)
             emit vpnIPAssigned(assignedVpnIP);
         }
 
-        // Parse UDP_PORT
         if (message.contains("UDP_PORT:")) {
             int start = message.indexOf("UDP_PORT:") + 9;
             int end = message.indexOf("|", start);
@@ -617,7 +601,6 @@ void VPNClient::parseServerMessage(const QString& message)
             qDebug() << "[CONFIG] UDP Port:" << udpServerPort;
         }
 
-        // Parse CLIENT_ID
         if (message.contains("CLIENT_ID:")) {
             int start = message.indexOf("CLIENT_ID:") + 10;
             int end = message.indexOf("|", start);
@@ -626,7 +609,6 @@ void VPNClient::parseServerMessage(const QString& message)
             qDebug() << "[CONFIG] Client ID:" << clientId;
         }
 
-        // ✅ Request UDP key (will be received in onConnected loop)
         qDebug() << "[CRYPTO] Requesting UDP key...";
         requestUDPKey();
 
@@ -645,7 +627,6 @@ void VPNClient::parseServerMessage(const QString& message)
     else if (message.startsWith("PONG|")) {
         qDebug() << "[PING] Received PONG";
     }
-    // ✅ REMOVED: UDP_KEY handling (now in onConnected)
 }
 
 void VPNClient::requestUDPKey()
@@ -669,7 +650,6 @@ void VPNClient::startUdpHandshake()
 
     sendUdpHandshake();
 
-    // OPTIMIZATION: Giảm từ 500ms xuống 200ms
     udpHandshakeTimer->start(200);
 }
 
@@ -685,7 +665,6 @@ void VPNClient::sendUdpHandshake()
 
     qint64 sent = udpSocket->writeDatagram(handshake, 8, udpServerAddr, udpServerPort);
 
-    // OPTIMIZATION: Chỉ log lỗi, không log thành công
     if (sent <= 0) {
         qWarning() << "[UDP] Handshake send failed:" << udpSocket->errorString();
     }
@@ -747,23 +726,16 @@ bool VPNClient::encryptPacket(const QByteArray& plain, QByteArray& encrypted)
     uint64_t counter = txCounter++;
     memcpy(iv.data(), &counter, 8);
 
-    // Khởi tạo các vector và biến
-    // Cấp phát đủ dung lượng (plain.size() + 16) để tránh lỗi
     std::vector<uint8_t> ciphertext(plain.size() + 16);
     std::vector<uint8_t> tag(16);
     int len = 0, cipherLen = 0;
-    // --- KẾT THÚC PHẦN KHAI BÁO ---
 
-
-    // --- PHẦN LOGIC (BẠN ĐÃ DÁN) ---
-    // TÁI SỬ DỤNG context, chỉ cần Init lại với IV mới
     if (EVP_EncryptInit_ex(encryptCtx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1 ||
         EVP_CIPHER_CTX_ctrl(encryptCtx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1 ||
         EVP_EncryptInit_ex(encryptCtx, nullptr, nullptr, sharedKey.data(), iv.data()) != 1) {
         return false;
     }
 
-    // Mã hóa
     if (EVP_EncryptUpdate(encryptCtx, ciphertext.data(), &len,
                           (const uint8_t*)plain.constData(), plain.size()) != 1) {
         return false;
@@ -775,14 +747,11 @@ bool VPNClient::encryptPacket(const QByteArray& plain, QByteArray& encrypted)
         return false;
     }
 
-    // --- SỬA LỖI LOGIC TẠI ĐÂY ---
-    cipherLen += len; // <-- Bước 1: Cộng thêm len từ EncryptFinal
-    ciphertext.resize(cipherLen); // <-- Bước 2: Resize vector về kích thước thật
-    // --- KẾT THÚC SỬA LỖI ---
+    cipherLen += len;
+    ciphertext.resize(cipherLen);
 
 
-    // Code copy vào QByteArray 'encrypted' giữ nguyên
-    encrypted.resize(28 + ciphertext.size()); // <-- Bây giờ ciphertext.size() đã đúng
+    encrypted.resize(28 + ciphertext.size());
     memcpy(encrypted.data(), iv.data(), 12);
     memcpy(encrypted.data() + 12, tag.data(), 16);
     memcpy(encrypted.data() + 28, ciphertext.data(), ciphertext.size());
@@ -793,100 +762,76 @@ bool VPNClient::encryptPacket(const QByteArray& plain, QByteArray& encrypted)
 
 bool VPNClient::decryptPacket(const QByteArray& encrypted, QByteArray& plain)
 {
-    // 1. Kiểm tra ban đầu (dùng decryptCtx và check size tối thiểu)
     if (!cryptoReady || sharedKey.empty() || !decryptCtx || encrypted.size() < 28) {
         return false;
     }
 
-    // 2. Trích xuất con trỏ tới các phần của gói tin
-    // Gói tin có cấu trúc: [IV: 12 bytes][Tag: 16 bytes][Ciphertext: N bytes]
     const uint8_t* iv_ptr = (const uint8_t*)encrypted.constData();
     const uint8_t* tag_ptr = (const uint8_t*)encrypted.constData() + 12;
     const uint8_t* ciphertext_ptr = (const uint8_t*)encrypted.constData() + 28;
     int ciphertext_len = encrypted.size() - 28;
 
-    // 3. Chống tấn công Replay (Phát lại) - Dùng Cửa Sổ Trượt (Sliding Window)
     uint64_t nonce = 0;
-    memcpy(&nonce, iv_ptr, 8); // Lấy 8 byte counter từ IV
+    memcpy(&nonce, iv_ptr, 8);
 
-    // Trường hợp 1: Gói tin mới (nonce cao nhất)
     if (nonce > rxCounter) {
-        // "Trượt" (slide) cửa sổ
         uint64_t diff = nonce - rxCounter;
         if (diff < 64) {
-            // Dịch (shift) bitmap sang trái 'diff' vị trí
             rxWindowBitmap <<= diff;
         } else {
-            // Chênh lệch quá lớn, coi như reset cửa sổ
             rxWindowBitmap = 0;
         }
 
-        // Đánh dấu bit cho gói tin mới này (bit 0)
         rxWindowBitmap |= 1;
 
-        // Cập nhật counter cao nhất
         rxCounter = nonce;
     }
-    // Trường hợp 2: Gói tin cũ (out-of-order) hoặc lặp lại (replay)
     else {
         uint64_t diff = rxCounter - nonce;
 
-        // 2a. Gói tin quá cũ (nằm ngoài cửa sổ 64-bit)
         if (diff >= 64) {
             // qWarning() << "[SECURITY] Rejected (Too Old): nonce:" << nonce << "rxCounter:" << rxCounter;
-            return false; // Quá cũ, từ chối
+            return false;
         }
 
-        // 2b. Gói tin nằm trong cửa sổ, kiểm tra bit
         uint64_t bit = 1ULL << diff; // Dùng 1ULL để đảm bảo là 64-bit shift
         if ((rxWindowBitmap & bit) != 0) {
-            // Bit đã được set -> Gói tin này đã được xử lý
             // qWarning() << "[SECURITY] Rejected (Replay): nonce:" << nonce << "rxCounter:" << rxCounter;
             return false; // Gói lặp lại, từ chối
         }
 
-        // 2c. Gói tin hợp lệ (out-of-order), chưa xử lý
         // Đánh dấu bit này là "đã xử lý"
         rxWindowBitmap |= bit;
 
-        // Chấp nhận gói tin và tiếp tục giải mã
     }
 
-    // --- BẮT ĐẦU CODE GIẢI MÃ ---
-    // Chuẩn bị buffer cho plaintext (kích thước tối đa bằng ciphertext)
-    plain.resize(ciphertext_len + 16); // Thêm 16 byte đề phòng
+    plain.resize(ciphertext_len + 16);
     int len = 0, plainLen = 0;
 
-    // 4. TÁI SỬ DỤNG context, Init lại với IV mới
     if (EVP_DecryptInit_ex(decryptCtx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1 ||
         EVP_CIPHER_CTX_ctrl(decryptCtx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1 ||
         EVP_DecryptInit_ex(decryptCtx, nullptr, nullptr, sharedKey.data(), iv_ptr) != 1) {
         return false;
     }
 
-    // 5. Giải mã
     if (EVP_DecryptUpdate(decryptCtx, (uint8_t*)plain.data(), &len,
                           ciphertext_ptr, ciphertext_len) != 1) {
         return false;
     }
     plainLen = len;
 
-    // 6. CRITICAL: Cung cấp Tag (lấy từ gói tin) để OpenSSL xác thực
     if (EVP_CIPHER_CTX_ctrl(decryptCtx, EVP_CTRL_GCM_SET_TAG, 16, (void*)tag_ptr) != 1) {
         return false;
     }
 
-    // 7. Hoàn tất (Finalize). Hàm này sẽ thất bại (return <= 0) nếu Tag không khớp!
     int ret = EVP_DecryptFinal_ex(decryptCtx, (uint8_t*)plain.data() + len, &len);
 
     if (ret <= 0) {
         // qWarning() << "[CRYPTO] Decrypt failed: Tag mismatch or corrupted packet.";
-        plain.clear(); // Xóa dữ liệu rác
-        return false; // Xác thực thất bại!
+        plain.clear();
+        return false;
     }
-    // --- KẾT THÚC CODE GIẢI MÃ ---
 
-    // 8. Resize QByteArray 'plain' về kích thước thật
     plainLen += len;
     plain.resize(plainLen);
 
@@ -905,7 +850,6 @@ quint64 VPNClient::getBytesSent() const
 
 void VPNClient::simulateWebBrowsing()
 {
-    // Giữ nguyên
 }
 
 void VPNClient::requestVPNIP()
@@ -916,4 +860,9 @@ void VPNClient::requestVPNIP()
 void VPNClient::requestStatus()
 {
     if (authenticated) sendMessage("STATUS");
+}
+
+void VPNClient::shutdown()
+{
+    tun.shutdown();
 }

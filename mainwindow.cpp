@@ -54,6 +54,7 @@ MainWindow::~MainWindow()
     saveSettings();
     if (vpnClient) {
         vpnClient->disconnectFromServer();
+        vpnClient->shutdown();
     }
     if (currentReply) {
         currentReply->abort();
@@ -171,7 +172,6 @@ void MainWindow::connectToVPN()
         return;
     }
 
-    // 1. Xác định vùng được chọn
     QString serverKey;
     if (usRadioButton->isChecked()) {
         serverKey = "servers/us_server_ip";
@@ -279,7 +279,7 @@ bool MainWindow::isServerReachable(const QString& host)
 
     QHostAddress address(host);
     if (address.isNull()) {
-        return false; // Không phải IP hợp lệ
+        return false;
     }
 
     quint32 ip = address.toIPv4Address();
@@ -373,11 +373,9 @@ void MainWindow::updateStats()
         totalDownload = 0;
         totalUpload = 0;
 
-        // --- RESET TRẠNG THÁI ---
         latencyLabel->setText("Ping: 100 ms");
         packetLossLabel->setText("Loss: 0 %");
         packetLossLabel->setStyleSheet("color: #555;");
-        // ------------------------
 
         downloadLabel->setText("↓ 0 KB");
         uploadLabel->setText("↑ 0 KB");
@@ -398,16 +396,54 @@ void MainWindow::checkCurrentIP()
     getPublicIP();
 }
 
+// QString MainWindow::getCurrentLocalIP()
+// {
+//     QString localIP = "127.0.0.1";
+
+//     QList<QHostAddress> addresses = QNetworkInterface::allAddresses();
+//     for (const QHostAddress &address : addresses) {
+//         if (address.protocol() == QAbstractSocket::IPv4Protocol &&
+//             address != QHostAddress::LocalHost) {
+//             localIP = address.toString();
+//             break;
+//         }
+//     }
+
+//     return localIP;
+// }
 QString MainWindow::getCurrentLocalIP()
 {
     QString localIP = "127.0.0.1";
 
-    QList<QHostAddress> addresses = QNetworkInterface::allAddresses();
-    for (const QHostAddress &address : addresses) {
-        if (address.protocol() == QAbstractSocket::IPv4Protocol &&
-            address != QHostAddress::LocalHost) {
-            localIP = address.toString();
-            break;
+    QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
+
+    for (const QNetworkInterface &interface : interfaces) {
+        if (!(interface.flags() & QNetworkInterface::IsUp) ||
+            !(interface.flags() & QNetworkInterface::IsRunning) ||
+            (interface.flags() & QNetworkInterface::IsLoopBack)) {
+            continue;
+        }
+
+        QString name = interface.humanReadableName();
+        if (name.contains("MyVPN", Qt::CaseInsensitive) ||
+            name.contains("Wintun", Qt::CaseInsensitive) ||
+            name.contains("TAP", Qt::CaseInsensitive)) {
+            continue;
+        }
+
+        QList<QNetworkAddressEntry> entries = interface.addressEntries();
+        for (const QNetworkAddressEntry &entry : entries) {
+            QHostAddress ip = entry.ip();
+
+            if (ip.protocol() != QAbstractSocket::IPv4Protocol) continue;
+
+            QString ipString = ip.toString();
+
+            if (ipString.startsWith("10.8.0.")) {
+                continue;
+            }
+
+            return ipString;
         }
     }
 
@@ -465,7 +501,6 @@ void MainWindow::setupUI()
 
     QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
 
-    // IP Information Group
     QGroupBox *ipGroup = new QGroupBox("Thông tin IP");
     QGridLayout *ipLayout = new QGridLayout(ipGroup);
 
@@ -487,7 +522,6 @@ void MainWindow::setupUI()
 
     mainLayout->addWidget(ipGroup);
 
-    // Connection status group
     QGroupBox *statusGroup = new QGroupBox("Trạng thái kết nối");
     QVBoxLayout *statusLayout = new QVBoxLayout(statusGroup);
 
@@ -499,14 +533,11 @@ void MainWindow::setupUI()
     downloadLabel = new QLabel("↓ 0 KB");
     uploadLabel = new QLabel("↑ 0 KB");
 
-    // --- THÊM MỚI ---
     latencyLabel = new QLabel("Ping: - ms");
-    // Tùy chọn: thêm style cho đẹp
     //latencyLabel->setStyleSheet("color: #555;");
 
     packetLossLabel = new QLabel("Loss: - %");
     //packetLossLabel->setStyleSheet("color: #555;");
-    // ----------------
 
     connectionTimeLabel = new QLabel("Thời gian: 00:00:00");
 
@@ -525,7 +556,6 @@ void MainWindow::setupUI()
 
     mainLayout->addWidget(statusGroup);
 
-    // <<< THÊM MỚI: VÙNG CHUYỂN VÙNG >>>
     regionGroup = new QGroupBox("Chuyển vùng");
     QHBoxLayout *regionLayout = new QHBoxLayout(regionGroup);
 
@@ -540,11 +570,9 @@ void MainWindow::setupUI()
 
     mainLayout->addWidget(regionGroup);
 
-    // Kết nối tín hiệu của radio button tới slot xử lý
     connect(usRadioButton, &QRadioButton::toggled, this, &MainWindow::onRegionChanged);
     connect(sgRadioButton, &QRadioButton::toggled, this, &MainWindow::onRegionChanged);
     connect(ukRadioButton, &QRadioButton::toggled, this, &MainWindow::onRegionChanged);
-    // <<< KẾT THÚC THÊM MỚI >>>
 
     QGroupBox *settingsGroup = new QGroupBox("Cài đặt kết nối");
     QGridLayout *settingsLayout = new QGridLayout(settingsGroup);
@@ -574,7 +602,6 @@ void MainWindow::setupUI()
 
     mainLayout->addWidget(settingsGroup);
 
-    // Control buttons
     QHBoxLayout *buttonLayout = new QHBoxLayout();
 
     connectButton = new QPushButton("Kết nối");
@@ -774,10 +801,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::onRegionChanged()
 {
-    // Bất cứ khi nào người dùng chọn một vùng, cho phép họ nhấn nút kết nối
     connectButton->setEnabled(true);
 
-    // Quy tắc: Nếu đang kết nối, phải ngắt kết nối để đổi vùng
     if (isConnected) {
         QMessageBox::information(this, "Thông báo", "Bạn sẽ được ngắt kết nối để thay đổi vùng máy chủ.");
         disconnectFromVPN();

@@ -25,7 +25,6 @@ typedef BYTE* (WINAPI *WINTUN_ALLOCATE_PACKET_FUNC)(WINTUN_SESSION_HANDLE, DWORD
 typedef void (WINAPI *WINTUN_SEND_PACKET_FUNC)(WINTUN_SESSION_HANDLE, const BYTE*);
 typedef HANDLE (WINAPI *WINTUN_GET_READ_WAIT_EVENT_FUNC)(WINTUN_SESSION_HANDLE);
 
-// Global WinTun function pointers
 static HMODULE g_wintunDll = nullptr;
 static WINTUN_CREATE_ADAPTER_FUNC WintunCreateAdapter = nullptr;
 static WINTUN_CLOSE_ADAPTER_FUNC WintunCloseAdapter = nullptr;
@@ -37,7 +36,6 @@ static WINTUN_ALLOCATE_PACKET_FUNC WintunAllocateSendPacket = nullptr;
 static WINTUN_SEND_PACKET_FUNC WintunSendPacket = nullptr;
 static WINTUN_GET_READ_WAIT_EVENT_FUNC WintunGetReadWaitEvent = nullptr;
 
-// WinTun handles
 static WINTUN_ADAPTER_HANDLE g_adapter = nullptr;
 static WINTUN_SESSION_HANDLE g_session = nullptr;
 
@@ -55,11 +53,9 @@ TUNInterface::~TUNInterface() {
 
 #ifdef _WIN32
 
-// Load WinTun DLL
 bool loadWintunDll() {
-    if (g_wintunDll) return true; // Already loaded
+    if (g_wintunDll) return true;
 
-    // Try to load from current directory
     g_wintunDll = LoadLibraryW(L"wintun.dll");
 
     if (!g_wintunDll) {
@@ -67,7 +63,6 @@ bool loadWintunDll() {
         return false;
     }
 
-    // Load all function pointers
     WintunCreateAdapter = (WINTUN_CREATE_ADAPTER_FUNC)GetProcAddress(g_wintunDll, "WintunCreateAdapter");
     WintunCloseAdapter = (WINTUN_CLOSE_ADAPTER_FUNC)GetProcAddress(g_wintunDll, "WintunCloseAdapter");
     WintunStartSession = (WINTUN_START_SESSION_FUNC)GetProcAddress(g_wintunDll, "WintunStartSession");
@@ -92,39 +87,36 @@ bool loadWintunDll() {
 }
 
 bool TUNInterface::create() {
-    if (isOpen.load()) return true;
-
-    // Load WinTun DLL
     if (!loadWintunDll()) {
         std::cerr << "[WINTUN] Failed to load WinTun library\n";
         return false;
     }
 
-    // Create WinTun adapter
-    GUID guid = { 0x12345678, 0x1234, 0x1234, {0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC} };
-
-    g_adapter = WintunCreateAdapter(L"MyVPN", L"WinTun", &guid);
-
     if (!g_adapter) {
-        DWORD err = GetLastError();
-        std::cerr << "[WINTUN] Failed to create adapter: " << err << std::endl;
-        return false;
+        GUID guid = { 0x12345678, 0x1234, 0x1234, {0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC} };
+
+        g_adapter = WintunCreateAdapter(L"MyVPN", L"WinTun", &guid);
+
+        if (!g_adapter) {
+            DWORD err = GetLastError();
+            std::cerr << "[WINTUN] Failed to create/open adapter: " << err << std::endl;
+            return false;
+        }
+        std::cout << "[WINTUN] ✓ Adapter created/opened\n";
     }
 
-    std::cout << "[WINTUN] ✓ Adapter created\n";
+    if (g_session) {
+        WintunEndSession(g_session);
+        g_session = nullptr;
+    }
 
-    // Start WinTun session with 0x400000 ring capacity (4MB)
     g_session = WintunStartSession(g_adapter, 0x400000);
-
     if (!g_session) {
         std::cerr << "[WINTUN] Failed to start session: " << GetLastError() << std::endl;
-        WintunCloseAdapter(g_adapter);
-        g_adapter = nullptr;
         return false;
     }
 
     std::cout << "[WINTUN] ✓ Session started\n";
-
     interfaceName = "MyVPN";
     isOpen.store(true);
     return true;
@@ -270,7 +262,6 @@ int TUNInterface::readPacket(char* buffer, int maxSize) {
 int TUNInterface::writePacket(const char* buffer, int size) {
     if (!isOpen.load() || !g_session || size <= 0) return -1;
 
-    // WinTun expects RAW IP packets (no Ethernet header)
     BYTE* packet = WintunAllocateSendPacket(g_session, size);
 
     if (!packet) {
@@ -287,11 +278,12 @@ int TUNInterface::writePacket(const char* buffer, int size) {
 void TUNInterface::close() {
     if (!isOpen.load()) return;
 
+    std::cout << "[TUN] Stopping session..." << std::endl;
+
     std::cout << "[TUN] Cleaning up interface..." << std::endl;
 
     setIPv6Status(true);
 
-    // Restore old gateway
     std::ifstream gwFile("C:\\vpn_old_gateway.txt");
     std::string oldGateway;
     if (gwFile.is_open()) {
@@ -319,16 +311,10 @@ void TUNInterface::close() {
         g_session = nullptr;
     }
 
-    if (g_adapter) {
-        WintunCloseAdapter(g_adapter);
-        g_adapter = nullptr;
-    }
-
     isOpen.store(false);
     std::cout << "[TUN] ✓ Cleanup complete\n";
 }
 
-// Helper functions remain the same
 void TUNInterface::setIPv6Status(bool enable) {
     std::string status = enable ? "enabled" : "disabled";
     std::string cmd = "powershell -Command \"Get-NetAdapterBinding -ComponentID ms_tcpip6 | "
@@ -399,4 +385,14 @@ void TUNInterface::resetStats() {
     bytesSent = 0;
 }
 
-#endif // _WIN32
+void TUNInterface::shutdown() {
+    close();
+
+    if (g_adapter) {
+        WintunCloseAdapter(g_adapter);
+        g_adapter = nullptr;
+        std::cout << "[WINTUN] Adapter destroyed\n";
+    }
+}
+
+#endif

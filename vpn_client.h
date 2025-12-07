@@ -19,6 +19,7 @@ public:
     explicit VPNClient(QObject *parent = nullptr);
     ~VPNClient();
 
+    void shutdown();
     void connectToServer(const QString& host, int port, const QString& username, const QString& password);
     void disconnectFromServer();
     bool isConnected() const;
@@ -52,7 +53,6 @@ private slots:
     void sendUdpHandshake();
     void startUdpHandshake();
     void onError(QAbstractSocket::SocketError socketError);
-    // void sendPing();
     void processTUNTraffic();
     void requestUDPKey();
 
@@ -68,12 +68,10 @@ private:
     bool decryptPacket(const QByteArray& encrypted, QByteArray& plain);
     void setupUDPConnection();
 
-    // TCP
     QTcpSocket *socket;
     QTimer *pingTimer;
     QTimer *tlsReadPoller;
 
-    // UDP - THÊM
     QUdpSocket *udpSocket;
     QHostAddress udpServerAddr;
     quint16 udpServerPort;
@@ -84,7 +82,7 @@ private:
     int serverPort;
     QString assignedVpnIP;
     QString serverIP;
-    int clientId;  // THÊM: để đóng gói UDP
+    int clientId;
     QTimer *udpHandshakeTimer;
 
     QTimer* tunTrafficTimer;
@@ -106,8 +104,8 @@ private:
     EVP_CIPHER_CTX *decryptCtx;
     bool cryptoReady;
     std::vector<uint8_t> sharedKey;
-    uint64_t txCounter;  // Nonce counter for encryption
-    uint64_t rxCounter;  // Track received nonces for replay protection
+    uint64_t txCounter;
+    uint64_t rxCounter;
     uint64_t rxWindowBitmap;
 };
 

@@ -30,6 +30,7 @@ public:
     ~TUNInterface();
 
     bool create();
+    void shutdown();
 
     bool configure(const std::string& ip, const std::string& mask,
                    const std::string& server = "");
