@@ -10,7 +10,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
 
-# ====== OPENSSL ======
 if(WIN32)
     set(OPENSSL_ROOT_DIR "C:/Progra~1/OpenSSL-Win64")
     set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
@@ -91,7 +90,6 @@ if(WIN32)
     endif()
 endif()
 
-# ====== POST-BUILD: Copy DLLs ======
 if(WIN32)
     add_custom_command(TARGET vpn_client_win POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Copying OpenSSL DLLs..."

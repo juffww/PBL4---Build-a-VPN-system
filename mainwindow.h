@@ -51,6 +51,8 @@ private:
     bool isServerReachable(const QString& host);
     QString getCurrentLocalIP();
 
+    QString initialISP_IP;
+
     QLabel *statusLabel;
     QLabel *realIPLabel;
     QLabel *vpnIPLabel;

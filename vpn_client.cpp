@@ -37,7 +37,7 @@ VPNClient::VPNClient(QObject *parent)
     socket = new QTcpSocket(this);
     udpSocket = new QUdpSocket(this);
 
-    int bufferSize = 8 * 1024 * 1024;
+    int bufferSize = 4 * 1024 * 1024;
     udpSocket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, bufferSize);
     udpSocket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, bufferSize);
     socket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, bufferSize);

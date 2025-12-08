@@ -98,7 +98,7 @@ void MainWindow::setupVPNClientConnections()
                                             QSystemTrayIcon::Information, 3000);
             }
 
-            QTimer::singleShot(2000, this, &MainWindow::getPublicIP);
+            QTimer::singleShot(5000, this, &MainWindow::getPublicIP);
 
         } else {
             isConnected = false;
@@ -189,7 +189,6 @@ void MainWindow::connectToVPN()
     QString host = settings.value(serverKey).toString().trimmed();
     int port = settings.value("servers/default_port", 5000).toInt();
 
-    // ===== FIX: KIỂM TRA VÀ LOG =====
     logTextEdit->append(QString("[DEBUG] Config file: win_config.ini"));
     logTextEdit->append(QString("[DEBUG] Server key: %1").arg(serverKey));
     logTextEdit->append(QString("[DEBUG] Host read: '%1'").arg(host));
@@ -207,7 +206,6 @@ void MainWindow::connectToVPN()
         return;
     }
 
-    // ===== FIX: KIỂM TRA IP HỢP LỆ =====
     QHostAddress testAddr(host);
     if (testAddr.isNull()) {
         QMessageBox::critical(this, "Lỗi IP",
@@ -216,17 +214,14 @@ void MainWindow::connectToVPN()
         return;
     }
 
-    // ===== FIX: KIỂM TRA PORT HỢP LỆ =====
     if (port <= 0 || port > 65535) {
         QMessageBox::critical(this, "Lỗi Port",
                               QString("Port không hợp lệ: %1 (phải từ 1-65535)").arg(port));
         return;
     }
 
-    // 3. Cập nhật UI
     serverEdit->setText(QString("%1:%2").arg(host).arg(port));
 
-    // 4. Lấy thông tin đăng nhập
     QString username = usernameEdit->text().trimmed();
     QString password = passwordEdit->text().trimmed();
 
@@ -241,7 +236,6 @@ void MainWindow::connectToVPN()
         return;
     }
 
-    // 5. Bắt đầu kết nối
     connectButton->setEnabled(false);
     progressBar->setVisible(true);
     progressBar->setRange(0, 0);
@@ -250,7 +244,6 @@ void MainWindow::connectToVPN()
     logTextEdit->append(QString("[INFO] => Connecting to: %1:%2").arg(host).arg(port));
     logTextEdit->append(QString("[INFO] => Username: %1").arg(username));
 
-    // ===== FIX: THÊM TIMEOUT HANDLER =====
     QTimer::singleShot(10000, this, [this, host, port]() {
         if (!isConnected && !vpnClient->isConnected()) {
             logTextEdit->append("[ERROR] Connection timeout after 10 seconds");
@@ -266,6 +259,16 @@ void MainWindow::connectToVPN()
                                           "3. IP và Port có đúng không?").arg(host).arg(port));
         }
     });
+
+    if (!isConnected && initialISP_IP.isEmpty() && !currentPublicIP.isEmpty()) {
+        initialISP_IP = currentPublicIP;
+        logTextEdit->append(QString("[DEBUG] IP ISP gốc: %1").arg(initialISP_IP));
+    }
+
+    if (networkManager) {
+        delete networkManager;
+        networkManager = new QNetworkAccessManager(this);
+    }
 
     vpnClient->connectToServer(host, port, username, password);
 }
@@ -399,56 +402,48 @@ void MainWindow::checkCurrentIP()
 QString MainWindow::getCurrentLocalIP()
 {
     QString localIP = "127.0.0.1";
+    QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
 
-    QList<QHostAddress> addresses = QNetworkInterface::allAddresses();
-    for (const QHostAddress &address : addresses) {
-        if (address.protocol() == QAbstractSocket::IPv4Protocol &&
-            address != QHostAddress::LocalHost) {
-            localIP = address.toString();
-            break;
+    // Duyệt qua tất cả các card mạng
+    for (const QNetworkInterface &interface : interfaces) {
+        // Bỏ qua nếu card mạng chưa bật hoặc là Loopback
+        if (!(interface.flags() & QNetworkInterface::IsUp) ||
+            !(interface.flags() & QNetworkInterface::IsRunning) ||
+            (interface.flags() & QNetworkInterface::IsLoopBack)) {
+            continue;
+        }
+
+        // Lọc bỏ các tên card mạng thường là VPN
+        QString name = interface.humanReadableName();
+        if (name.contains("MyVPN", Qt::CaseInsensitive) ||
+            name.contains("Wintun", Qt::CaseInsensitive) ||
+            name.contains("TAP", Qt::CaseInsensitive) ||
+            name.contains("Tun", Qt::CaseInsensitive)) {
+            continue;
+        }
+
+        QList<QNetworkAddressEntry> entries = interface.addressEntries();
+        for (const QNetworkAddressEntry &entry : entries) {
+            QHostAddress ip = entry.ip();
+
+            // Chỉ lấy IPv4
+            if (ip.protocol() != QAbstractSocket::IPv4Protocol) continue;
+
+            QString ipString = ip.toString();
+
+            // Lọc cứng: Bỏ qua dải IP của VPN (10.8.0.x)
+            if (ipString.startsWith("10.8.0.")) {
+                continue;
+            }
+
+            // Nếu tìm thấy IP hợp lệ (thường bắt đầu 192.168 hoặc 10.x hoặc 172.x)
+            // Trả về ngay lập tức
+            return ipString;
         }
     }
 
     return localIP;
 }
-// QString MainWindow::getCurrentLocalIP()
-// {
-//     QString localIP = "127.0.0.1";
-
-//     QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
-
-//     for (const QNetworkInterface &interface : interfaces) {
-//         if (!(interface.flags() & QNetworkInterface::IsUp) ||
-//             !(interface.flags() & QNetworkInterface::IsRunning) ||
-//             (interface.flags() & QNetworkInterface::IsLoopBack)) {
-//             continue;
-//         }
-
-//         QString name = interface.humanReadableName();
-//         if (name.contains("MyVPN", Qt::CaseInsensitive) ||
-//             name.contains("Wintun", Qt::CaseInsensitive) ||
-//             name.contains("TAP", Qt::CaseInsensitive)) {
-//             continue;
-//         }
-
-//         QList<QNetworkAddressEntry> entries = interface.addressEntries();
-//         for (const QNetworkAddressEntry &entry : entries) {
-//             QHostAddress ip = entry.ip();
-
-//             if (ip.protocol() != QAbstractSocket::IPv4Protocol) continue;
-
-//             QString ipString = ip.toString();
-
-//             if (ipString.startsWith("10.8.0.")) {
-//                 continue;
-//             }
-
-//             return ipString;
-//         }
-//     }
-
-//     return localIP;
-// }
 
 void MainWindow::getPublicIP()
 {
@@ -478,14 +473,16 @@ void MainWindow::onPublicIPReceived()
             currentPublicIP = obj["ip"].toString();
             publicIPLabel->setText(QString("IP công cộng: %1").arg(currentPublicIP));
 
-            logTextEdit->append(QString("[INFO] IP công cộng hiện tại: %1").arg(currentPublicIP));
+            logTextEdit->append(QString("[SUCCESS] Đã lấy IP công cộng mới: %1").arg(currentPublicIP));
         }
     } else {
-        publicIPLabel->setText("IP công cộng: Không xác định");
-        logTextEdit->append("[WARN] Không thể lấy IP công cộng");
+        QString errStr = currentReply->errorString();
+        publicIPLabel->setText("IP công cộng: Lỗi mạng");
+        logTextEdit->append(QString("[WARN] Không thể lấy IP công cộng. Lỗi: %1").arg(errStr));
+
+        QTimer::singleShot(5000, this, &MainWindow::getPublicIP);
     }
 
-    disconnect(currentReply, nullptr, this, nullptr);
     currentReply->deleteLater();
     currentReply = nullptr;
 }
