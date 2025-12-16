@@ -372,6 +372,12 @@ bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key
     ClientCrypto& crypto = cryptoMap[clientId]; 
 
     crypto.udpSharedKey = key;
+    // After setting crypto.udpSharedKey = key;
+    uint8_t firstByte = key[0];
+    uint8_t lastByte = key[31];
+    std::cout << "[DEBUG] Client " << clientId << " Key Check: " 
+              << std::hex << (int)firstByte << "..." << (int)lastByte << std::dec << "\n";
+
     crypto.ready = true;
     crypto.txCounter = 0;
     crypto.rxCounter = 0;
@@ -398,7 +404,8 @@ bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key
 
 bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize,
                                   std::vector<uint8_t>& encrypted) {
-    std::lock_guard<std::mutex> mapLock(clientsMutex);
+    // std::lock_guard<std::mutex> mapLock(clientsMutex);
+    std::lock_guard<std::mutex> mapLock(cryptoMutex); 
     auto it = cryptoMap.find(clientId);
     if (it == cryptoMap.end() || !it->second.ready || !it->second.encryptCtx) return false;
     
@@ -448,7 +455,8 @@ bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSi
                                   std::vector<uint8_t>& plain) {
     if (encSize < 28) return false;
 
-    std::lock_guard<std::mutex> mapLock(clientsMutex); 
+    // std::lock_guard<std::mutex> mapLock(clientsMutex); 
+    std::lock_guard<std::mutex> mapLock(cryptoMutex);
     auto it = cryptoMap.find(clientId);
     if (it == cryptoMap.end() || !it->second.ready || !it->second.decryptCtx) return false;
 
@@ -486,6 +494,8 @@ bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSi
     const std::vector<uint8_t>& key = crypto.udpSharedKey;
     
     int len = 0, plaintext_len = 0;
+
+    EVP_CIPHER_CTX_reset(ctx);
 
     if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
         std::cerr << "[CRYPTO] Reset cipher failed\n";
