@@ -186,38 +186,31 @@ void VPNClient::onConnected()
                     }
                 }
 
+                // Check for UDP_KEY (CRITICAL: Must be 41 bytes: "UDP_KEY|" + 32 bytes + "\n")
                 int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
-                if (udpKeyPos != -1) {
-                    int newlinePos = messageBuffer.indexOf('\n', udpKeyPos);
+                    if (udpKeyPos != -1 && messageBuffer.size() >= (udpKeyPos + 41)) {
+                        // Extract exactly 41 bytes: "UDP_KEY|" (8) + key (32) + "\n" (1)
+                        QByteArray keyLine = messageBuffer.mid(udpKeyPos, 41);
 
-                    if (newlinePos != -1) {
-                        QByteArray keyLine = messageBuffer.mid(udpKeyPos, newlinePos - udpKeyPos);
+                        qDebug() << "[CRYPTO] Found UDP_KEY at position" << udpKeyPos
+                                 << "size:" << keyLine.size();
 
-                        qDebug() << "[CRYPTO] Found UDP_KEY line:" << keyLine;
+                        if (keyLine.size() == 41 && keyLine[40] == '\n') {
+                            QByteArray keyData = keyLine.mid(8, 32); // Skip "UDP_KEY|"
 
-                        messageBuffer.remove(udpKeyPos, newlinePos - udpKeyPos + 1);
+                            sharedKey.assign(keyData.begin(), keyData.end());
+                            cryptoReady = true;
+                            txCounter = 0;
+                            rxCounter = 0;
+                            rxWindowBitmap = 0;
 
-                        if (keyLine.size() > 8) {
-                            QByteArray b64Key = keyLine.mid(8);
+                            qDebug() << "[CRYPTO] ✓ UDP encryption ready";
 
-                            QByteArray keyData = QByteArray::fromBase64(b64Key);
-
-                            if (keyData.size() == 32) {
-                                sharedKey.assign(keyData.begin(), keyData.end());
-                                cryptoReady = true;
-                                txCounter = 0;
-                                rxCounter = 0;
-                                rxWindowBitmap = 0;
-
-                                qDebug() << "[CRYPTO] ✓ UDP encryption ready (Base64 decoded)";
-                                keyReceived = true;
-                            } else {
-                                qWarning() << "[CRYPTO] Invalid key size after decode:" << keyData.size();
-                            }
-                        }
+                            // Remove processed data
+                            messageBuffer.remove(udpKeyPos, 41);
+                            keyReceived = true;
                     }
                 }
-
                 if (authReceived && keyReceived) break;
             }
             else if (bytesRead < 0) {
@@ -501,38 +494,51 @@ void VPNClient::onReadyRead() {
             totalRead += bytesRead;
             messageBuffer.append(QByteArray(buffer, bytesRead));
 
+            // --- BẮT ĐẦU PHẦN SỬA ĐỔI ---
+            // Xử lý UDP_KEY dạng Raw Binary (Cố định 32 bytes)
+            // Định dạng: "UDP_KEY|" (8 bytes) + 32 bytes KEY + "\n" (1 byte) = Tổng 41 bytes
             int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
             if (udpKeyPos != -1) {
-                int newlineAfterKey = messageBuffer.indexOf('\n', udpKeyPos);
-                if (newlineAfterKey != -1) {
-                    QByteArray keyLine = messageBuffer.mid(udpKeyPos, newlineAfterKey - udpKeyPos);
-                    messageBuffer.remove(udpKeyPos, newlineAfterKey - udpKeyPos + 1);
+                // Kiểm tra xem đã nhận đủ 41 bytes dữ liệu cho phần Key chưa
+                if (messageBuffer.size() >= (udpKeyPos + 41)) {
+                    // Lấy chính xác 32 byte key (bỏ qua 8 byte header)
+                    QByteArray keyData = messageBuffer.mid(udpKeyPos + 8, 32);
 
-                    if (keyLine.size() > 8) {
-                        QByteArray b64Key = keyLine.mid(8);
-                        QByteArray keyData = QByteArray::fromBase64(b64Key);
+                    // Kiểm tra byte cuối cùng có phải là \n không (để đảm bảo tính toàn vẹn)
+                    // Lưu ý: messageBuffer[udpKeyPos + 40] là byte thứ 41
+                    if (messageBuffer.at(udpKeyPos + 40) == '\n') {
+                        sharedKey.assign(keyData.begin(), keyData.end());
+                        cryptoReady = true;
+                        txCounter = 0;
+                        rxCounter = 0;
+                        qDebug() << "[CRYPTO] ✓ UDP encryption ready (Raw Binary Key received)";
 
-                        if (keyData.size() == 32) {
-                            sharedKey.assign(keyData.begin(), keyData.end());
-                            cryptoReady = true;
-                            txCounter = 0;
-                            rxCounter = 0;
-                            qDebug() << "[CRYPTO] ✓ UDP encryption ready (Key received via Base64)";
-                            setupUDPConnection();
-                        } else {
-                            qWarning() << "[CRYPTO] Invalid key size after Base64 decode:" << keyData.size();
-                        }
+                        // Xóa gói tin Key khỏi buffer để vòng lặp text bên dưới không đọc nhầm
+                        messageBuffer.remove(udpKeyPos, 41);
+
+                        setupUDPConnection();
+                    } else {
+                        qWarning() << "[CRYPTO] Malformed UDP_KEY packet (missing newline at end)";
+                        // Nếu lỗi định dạng, có thể xóa tạm phần header để tìm lại lần sau hoặc ngắt kết nối
+                        messageBuffer.remove(udpKeyPos, 8);
                     }
                 }
+                // Nếu chưa đủ 41 bytes, chờ lần đọc tiếp theo (không làm gì cả)
             }
+            // --- KẾT THÚC PHẦN SỬA ĐỔI ---
 
+            // Xử lý các tin nhắn văn bản thông thường (text based)
             int newlinePos;
             while ((newlinePos = messageBuffer.indexOf('\n')) != -1) {
                 QByteArray line = messageBuffer.left(newlinePos);
+                // Xóa dòng đã đọc (+1 để xóa cả ký tự \n)
                 messageBuffer.remove(0, newlinePos + 1);
 
+                // Bỏ qua nếu dòng này là một phần của gói UDP_KEY (đề phòng sót)
+                if (line.startsWith("UDP_KEY|")) continue;
+
                 QString message = QString::fromUtf8(line).trimmed();
-                if (message.startsWith("UDP_KEY|")) continue;
+                if (message.isEmpty()) continue;
 
                 parseServerMessage(message);
                 emit messageReceived(message);
@@ -549,11 +555,9 @@ void VPNClient::onReadyRead() {
         }
         else {
             int sslError = SSL_get_error(tlsWrapper->getSSL(), bytesRead);
-
             if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
                 break;
             }
-
             if (sslError != SSL_ERROR_ZERO_RETURN) {
                 qWarning() << "[TLS] SSL Error:" << sslError;
             }
