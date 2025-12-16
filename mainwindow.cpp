@@ -404,16 +404,13 @@ QString MainWindow::getCurrentLocalIP()
     QString localIP = "127.0.0.1";
     QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
 
-    // Duyệt qua tất cả các card mạng
     for (const QNetworkInterface &interface : interfaces) {
-        // Bỏ qua nếu card mạng chưa bật hoặc là Loopback
         if (!(interface.flags() & QNetworkInterface::IsUp) ||
             !(interface.flags() & QNetworkInterface::IsRunning) ||
             (interface.flags() & QNetworkInterface::IsLoopBack)) {
             continue;
         }
 
-        // Lọc bỏ các tên card mạng thường là VPN
         QString name = interface.humanReadableName();
         if (name.contains("MyVPN", Qt::CaseInsensitive) ||
             name.contains("Wintun", Qt::CaseInsensitive) ||
@@ -426,18 +423,14 @@ QString MainWindow::getCurrentLocalIP()
         for (const QNetworkAddressEntry &entry : entries) {
             QHostAddress ip = entry.ip();
 
-            // Chỉ lấy IPv4
             if (ip.protocol() != QAbstractSocket::IPv4Protocol) continue;
 
             QString ipString = ip.toString();
 
-            // Lọc cứng: Bỏ qua dải IP của VPN (10.8.0.x)
             if (ipString.startsWith("10.8.0.")) {
                 continue;
             }
 
-            // Nếu tìm thấy IP hợp lệ (thường bắt đầu 192.168 hoặc 10.x hoặc 172.x)
-            // Trả về ngay lập tức
             return ipString;
         }
     }
@@ -541,12 +534,10 @@ void MainWindow::setupUI()
     statsLayout->addWidget(downloadLabel);
     statsLayout->addSpacing(15);
     statsLayout->addWidget(uploadLabel);
-    // --- THÊM VÀO LAYOUT ---
     statsLayout->addSpacing(15);
     statsLayout->addWidget(latencyLabel);
     statsLayout->addSpacing(15);
     statsLayout->addWidget(packetLossLabel);
-    // -----------------------
     statsLayout->addStretch();
     statsLayout->addWidget(connectionTimeLabel);
     statusLayout->addLayout(statsLayout);
@@ -609,7 +600,6 @@ void MainWindow::setupUI()
     connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectToVPN);
     buttonLayout->addWidget(connectButton);
 
-    // Nút Traffic chỉ hiển thị trạng thái
     trafficButton = new QPushButton("Traffic (Disconnected)");
     trafficButton->setEnabled(false);
     trafficButton->setStyleSheet(
