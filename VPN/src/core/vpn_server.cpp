@@ -349,12 +349,12 @@ void VPNServer::handleClient(int clientId) {
                         continue;
                     }
                     
-                    // std::string response = "UDP_KEY|";
-                    // response.append((char*)udpKey.data(), 32);
-                    // response += "\n";
-                    std::string b64Key = base64_encode(udpKey.data(), udpKey.size());
+                    std::string response = "UDP_KEY|";
+                    response.append((char*)udpKey.data(), 32);
+                    response += "\n";
+                    // std::string b64Key = base64_encode(udpKey.data(), udpKey.size());
     
-                    std::string response = "UDP_KEY|" + b64Key + "\n";
+                    // std::string response = "UDP_KEY|" + b64Key + "\n";
                     
                     int sent = client->tlsWrapper->send(response.c_str(), response.length());
                     if (sent <= 0) {
