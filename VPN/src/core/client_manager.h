@@ -110,8 +110,8 @@ private:
     int nextClientId;
     IPPool* ipPool;
     PacketHandler* packetHandler;
-    std::vector<uint8_t> cryptoBuffer; // Buffer lớn dùng chung (VD: 64KB)
-    std::vector<uint8_t> tagBuffer;    // 16 bytes
+    std::vector<uint8_t> cryptoBuffer; 
+    std::vector<uint8_t> tagBuffer;    
     
     std::string getCurrentTime();
 
@@ -142,7 +142,8 @@ public:
     bool removeClient(int clientId);
     bool disconnectClient(int clientId);
     
-    bool authenticateClient(int clientId, const std::string& username, const std::string& password);
+    // bool authenticateClient(int clientId, const std::string& username, const std::string& password);
+    bool authenticateClient(int clientId);
     bool assignVPNIP(int clientId);
     void releaseVPNIP(int clientId);
     std::string getClientVPNIP(int clientId);

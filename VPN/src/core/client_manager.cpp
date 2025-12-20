@@ -109,22 +109,35 @@ int ClientManager::addClient(SOCKET socket, const std::string& realIP, int port)
     return clientInfo.id;
 }
 
-bool ClientManager::authenticateClient(int clientId, const std::string& username, const std::string& password) {
+// bool ClientManager::authenticateClient(int clientId, const std::string& username, const std::string& password) {
+//     std::lock_guard<std::mutex> lock(clientsMutex);
+//     auto it = clients.find(clientId);
+//     if (it == clients.end()) return false;
+    
+//     //bool authenticated = !username.empty() && !password.empty();
+//     bool authenticated = true;
+//     if (authenticated) {
+//         it->second.authenticated = true;
+//         it->second.username = username;
+//         std::cout << "[SECURITY] Client " << clientId << " (" << username << ") authenticated successfully\n";
+//     } else {
+//         std::cerr << "[SECURITY] Client " << clientId << " authentication failed (user: " << username << ")\n";
+//     }
+    
+//     return authenticated;
+// }
+// Thay thế toàn bộ hàm cũ bằng hàm này
+bool ClientManager::authenticateClient(int clientId) {
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = clients.find(clientId);
     if (it == clients.end()) return false;
     
-    //bool authenticated = !username.empty() && !password.empty();
-    bool authenticated = true;
-    if (authenticated) {
-        it->second.authenticated = true;
-        it->second.username = username;
-        std::cout << "[SECURITY] Client " << clientId << " (" << username << ") authenticated successfully\n";
-    } else {
-        std::cerr << "[SECURITY] Client " << clientId << " authentication failed (user: " << username << ")\n";
-    }
+    // Mặc định cho phép xác thực luôn
+    it->second.authenticated = true;
+    it->second.username = "anonymous"; 
     
-    return authenticated;
+    std::cout << "[SECURITY] Client " << clientId << " authenticated successfully (Anonymous)\n";
+    return true;
 }
 
 

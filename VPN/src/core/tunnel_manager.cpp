@@ -45,8 +45,8 @@ bool TunnelManager::initialize(const std::string& serverIP, const std::string& s
         return false;
     }
     
-    tunInterface->executeCommand("ip link set dev " + interfaceName + " mtu 1400");
-    std::cout << "[TUNNEL] MTU set to 1400\n";
+    tunInterface->executeCommand("ip link set dev " + interfaceName + " mtu 1350");
+    std::cout << "[TUNNEL] MTU set to 1350\n";
 
     setupVPNRouting(subnet);
     
