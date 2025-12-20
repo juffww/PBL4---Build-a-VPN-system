@@ -601,7 +601,6 @@ bool VPNServer::processClientMessage(int clientId, const std::string& message) {
     iss >> command;
     
     if (command == "AUTH") {
-        // return handleAuthCommand(clientId, iss);
         return handleAuthCommand(clientId);
     }
     else if (command == "PING") {
@@ -625,39 +624,11 @@ bool VPNServer::processClientMessage(int clientId, const std::string& message) {
     return true;
 }
 
-// bool VPNServer::handleAuthCommand(int clientId, std::istringstream& iss) {
-//     std::string username, password;
-//     iss >> username >> password;
-    
-//     if (clientManager->authenticateClient(clientId, username, password)) {
-//         if (clientManager->assignVPNIP(clientId)) {
-//             std::string vpnIP = clientManager->getClientVPNIP(clientId);
-            
-//             std::string response = "AUTH_OK|VPN_IP:" + vpnIP + 
-//                      "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24"
-//                      "|UDP_PORT:5502"
-//                      "|CLIENT_ID:" + std::to_string(clientId) + "\n";
-                     
-//             sendTLS(clientId, response);
-//         } else {
-//             sendTLS(clientId, "AUTH_FAIL|No VPN IP available\n");
-//         }
-//     } 
-//      else {
-//          sendTLS(clientId, "AUTH_FAIL|Invalid credentials\n");
-//      }
-    
-//     return true;
-// }
 bool VPNServer::handleAuthCommand(int clientId) {
-    // Xóa dòng: std::string username, password; iss >> username >> password;
-    
-    // Gọi hàm authenticateClient mới (không tham số)
     if (clientManager->authenticateClient(clientId)) {
         if (clientManager->assignVPNIP(clientId)) {
             std::string vpnIP = clientManager->getClientVPNIP(clientId);
             
-            // Giữ nguyên phản hồi AUTH_OK
             std::string response = "AUTH_OK|VPN_IP:" + vpnIP + 
                      "|SERVER_IP:10.8.0.1|SUBNET:10.8.0.0/24"
                      "|UDP_PORT:5502"
