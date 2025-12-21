@@ -2,6 +2,7 @@
 #include <iostream>
 #include <openssl/rand.h>
 #include <cstring>
+#include <openssl/err.h> // Đừng quên include này
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -10,6 +11,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <fcntl.h> // Cần cho fcntl
 typedef int SOCKET;
 #endif
 
@@ -63,182 +65,6 @@ bool TLSWrapper::loadCertificates(const std::string& certFile, const std::string
     return true;
 }
 
-// bool TLSWrapper::initTLS(SOCKET sock) {
-//     if (!ctx) {
-//         std::cerr << "[TLS] SSL context not initialized\n";
-//         return false;
-//     }
-
-//     socket = sock;
-
-// #ifdef _WIN32
-//     // Windows: Set socket to blocking mode
-//     u_long mode = 0; // 0 = blocking
-//     if (ioctlsocket(socket, FIONBIO, &mode) != 0) {
-//         std::cerr << "[TLS] Failed to set blocking mode: " << WSAGetLastError() << "\n";
-//         return false;
-//     }
-// #else
-//     // Unix/macOS
-//     int flags = fcntl(socket, F_GETFL, 0);
-//     if (flags == -1) {
-//         std::cerr << "[TLS] Failed to get socket flags\n";
-//         perror("fcntl F_GETFL");
-//         return false;
-//     }
-
-//     if (fcntl(socket, F_SETFL, flags & ~O_NONBLOCK) == -1) {
-//         std::cerr << "[TLS] Failed to set blocking mode\n";
-//         perror("fcntl F_SETFL");
-//         return false;
-//     }
-// #endif
-
-//     std::cout << "[TLS] Socket set to blocking mode\n";
-
-//     ssl = SSL_new(ctx);
-//     if (!ssl) {
-//         std::cerr << "[TLS] Failed to create SSL object\n";
-//         ERR_print_errors_fp(stderr);
-//         return false;
-//     }
-
-//     if (SSL_set_fd(ssl, socket) != 1) {
-//         std::cerr << "[TLS] Failed to set socket FD\n";
-//         ERR_print_errors_fp(stderr);
-//         SSL_free(ssl);
-//         ssl = nullptr;
-//         return false;
-//     }
-
-//     std::cout << "[TLS] SSL object created, FD set: " << socket << "\n";
-
-// #ifdef _WIN32
-//     DWORD timeout = 10000; // 10 seconds in milliseconds
-//     if (setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
-//         std::cerr << "[TLS] Failed to set receive timeout\n";
-//     }
-//     if (setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
-//         std::cerr << "[TLS] Failed to set send timeout\n";
-//     }
-// #else
-//     struct timeval tv;
-//     tv.tv_sec = 10;
-//     tv.tv_usec = 0;
-//     if (setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-//         std::cerr << "[TLS] Failed to set receive timeout\n";
-//         perror("setsockopt SO_RCVTIMEO");
-//     }
-//     if (setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
-//         std::cerr << "[TLS] Failed to set send timeout\n";
-//         perror("setsockopt SO_SNDTIMEO");
-//     }
-// #endif
-
-//     int ret;
-//     if (isServer) {
-//         std::cout << "[TLS] Starting server handshake...\n";
-//         ret = SSL_accept(ssl);
-//     } else {
-//         std::cout << "[TLS] Starting client handshake...\n";
-//         ret = SSL_connect(ssl);
-//     }
-
-//     if (ret <= 0) {
-//         int err = SSL_get_error(ssl, ret);
-//         std::cerr << "[TLS] " << (isServer ? "Accept" : "Connect")
-//                   << " failed with error: " << err << "\n";
-//         ERR_print_errors_fp(stderr);
-//         SSL_free(ssl);
-//         ssl = nullptr;
-//         return false;
-//     }
-
-//     std::cout << "[TLS] Handshake successful (Cipher: " << SSL_get_cipher(ssl) << ")\n";
-
-//     if (!isServer) {
-//         std::cout << "[TLS] Waiting for server welcome message...\n";
-
-// #ifdef _WIN32
-//         fd_set readfds;
-//         struct timeval tv;
-//         FD_ZERO(&readfds);
-//         FD_SET(socket, &readfds);
-//         tv.tv_sec = 3;
-//         tv.tv_usec = 0;
-
-//         int selectRet = select(0, &readfds, nullptr, nullptr, &tv);
-// #else
-//         fd_set readfds;
-//         struct timeval tv;
-//         FD_ZERO(&readfds);
-//         FD_SET(socket, &readfds);
-//         tv.tv_sec = 3;
-//         tv.tv_usec = 0;
-
-//         int selectRet = select(socket + 1, &readfds, nullptr, nullptr, &tv);
-// #endif
-
-//         if (selectRet > 0) {
-//             char welcomeBuf[256];
-//             memset(welcomeBuf, 0, sizeof(welcomeBuf));
-//             int readBytes = SSL_read(ssl, welcomeBuf, sizeof(welcomeBuf) - 1);
-//             if (readBytes > 0) {
-//                 welcomeBuf[readBytes] = '\0';
-//                 std::cout << "[TLS] âœ“ Received: " << welcomeBuf << std::endl;
-
-// #ifdef _WIN32
-//                 Sleep(100); // 100ms
-// #else
-//                 usleep(100000);
-// #endif
-//             } else {
-//                 int err = SSL_get_error(ssl, readBytes);
-//                 std::cerr << "[TLS] âš  Welcome message read failed (SSL error: " << err << ")\n";
-//                 if (readBytes == 0) {
-//                     std::cerr << "[TLS] Connection closed by server during welcome\n";
-//                     SSL_free(ssl);
-//                     ssl = nullptr;
-//                     return false;
-//                 }
-//             }
-//         } else if (selectRet == 0) {
-//             std::cout << "[TLS] âš  No welcome message (timeout - may be OK)\n";
-//         } else {
-//             std::cerr << "[TLS] âš  Select error while waiting for welcome\n";
-//         }
-//     }
-
-// #ifdef _WIN32
-//     mode = 1; // 1 = non-blocking
-//     if (ioctlsocket(socket, FIONBIO, &mode) != 0) {
-//         std::cerr << "[TLS] Failed to restore non-blocking mode: " << WSAGetLastError() << "\n";
-//         SSL_free(ssl);
-//         ssl = nullptr;
-//         return false;
-//     }
-//     std::cout << "[TLS] âœ“ Socket restored to non-blocking mode\n";
-// #else
-//     int setFlags = flags | O_NONBLOCK;
-//     if (fcntl(socket, F_SETFL, setFlags) == -1) {
-//         std::cerr << "[TLS] Failed to restore non-blocking mode\n";
-//         perror("fcntl F_SETFL");
-//         SSL_free(ssl);
-//         ssl = nullptr;
-//         return false;
-//     }
-
-//     int currentFlags = fcntl(socket, F_GETFL, 0);
-//     if (currentFlags != -1 && (currentFlags & O_NONBLOCK)) {
-//         std::cout << "[TLS] âœ“ Socket restored to non-blocking mode for Qt\n";
-//     } else {
-//         std::cerr << "[TLS] âš  Non-blocking mode verification failed\n";
-//     }
-// #endif
-
-//     return true;
-// }
-
 bool TLSWrapper::initTLS(SOCKET sock) {
     if (!ctx) {
         std::cerr << "[TLS] SSL context not initialized\n";
@@ -247,7 +73,7 @@ bool TLSWrapper::initTLS(SOCKET sock) {
 
     socket = sock;
 
-    // Set socket to BLOCKING mode
+    // 1. CHUYỂN VỀ BLOCKING MODE (BẮT BUỘC ĐỂ HANDSHAKE)
 #ifdef _WIN32
     u_long mode = 0; // 0 = blocking
     if (ioctlsocket(socket, FIONBIO, &mode) != 0) {
@@ -257,41 +83,33 @@ bool TLSWrapper::initTLS(SOCKET sock) {
 #else
     int flags = fcntl(socket, F_GETFL, 0);
     if (flags == -1) {
-        std::cerr << "[TLS] Failed to get socket flags\n";
         perror("fcntl F_GETFL");
         return false;
     }
-
     if (fcntl(socket, F_SETFL, flags & ~O_NONBLOCK) == -1) {
-        std::cerr << "[TLS] Failed to set blocking mode\n";
-        perror("fcntl F_SETFL");
+        perror("fcntl F_SETFL blocking");
         return false;
     }
 #endif
 
-    std::cout << "[TLS] Socket set to blocking mode\n";
+    std::cout << "[TLS] Socket set to blocking mode for handshake\n";
 
-    // Create SSL object
     ssl = SSL_new(ctx);
     if (!ssl) {
         std::cerr << "[TLS] Failed to create SSL object\n";
-        ERR_print_errors_fp(stderr);
         return false;
     }
 
     if (SSL_set_fd(ssl, socket) != 1) {
         std::cerr << "[TLS] Failed to set socket FD\n";
-        ERR_print_errors_fp(stderr);
         SSL_free(ssl);
         ssl = nullptr;
         return false;
     }
 
-    std::cout << "[TLS] SSL object created, FD set: " << socket << "\n";
-
-    // Set socket timeouts
+    // Set Timeout để tránh treo mãi mãi nếu server không phản hồi
 #ifdef _WIN32
-    DWORD timeout = 10000; // 10 seconds
+    DWORD timeout = 10000;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
     setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
 #else
@@ -302,83 +120,62 @@ bool TLSWrapper::initTLS(SOCKET sock) {
     setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
 
-    // TLS Handshake
+    // 2. HANDSHAKE
     int ret;
     if (isServer) {
-        std::cout << "[TLS] Starting server handshake...\n";
         ret = SSL_accept(ssl);
     } else {
-        std::cout << "[TLS] Starting client handshake...\n";
         ret = SSL_connect(ssl);
     }
 
     if (ret <= 0) {
         int err = SSL_get_error(ssl, ret);
-        std::cerr << "[TLS] " << (isServer ? "Accept" : "Connect")
-                  << " failed with error: " << err << "\n";
+        std::cerr << "[TLS] Handshake failed: " << err << "\n";
         ERR_print_errors_fp(stderr);
         SSL_free(ssl);
         ssl = nullptr;
         return false;
     }
 
-    std::cout << "[TLS] Handshake successful (Cipher: " << SSL_get_cipher(ssl) << ")\n";
+    std::cout << "[TLS] Handshake successful\n";
 
-    // Read welcome message (client only)
+    // 3. ĐỌC WELCOME MESSAGE (Tùy chọn)
     if (!isServer) {
-        std::cout << "[TLS] Waiting for server welcome message...\n";
-
-#ifdef _WIN32
+        // Dùng select để peek xem có dữ liệu không
         fd_set readfds;
-        struct timeval tv;
+        struct timeval tv_sel;
         FD_ZERO(&readfds);
         FD_SET(socket, &readfds);
-        tv.tv_sec = 3;
-        tv.tv_usec = 0;
+        tv_sel.tv_sec = 2; // Chờ tối đa 2 giây cho welcome
+        tv_sel.tv_usec = 0;
 
-        int selectRet = select(0, &readfds, nullptr, nullptr, &tv);
-#else
-        fd_set readfds;
-        struct timeval tv;
-        FD_ZERO(&readfds);
-        FD_SET(socket, &readfds);
-        tv.tv_sec = 3;
-        tv.tv_usec = 0;
-
-        int selectRet = select(socket + 1, &readfds, nullptr, nullptr, &tv);
-#endif
-
-        if (selectRet > 0) {
+        int selRet = select((int)socket + 1, &readfds, nullptr, nullptr, &tv_sel);
+        if (selRet > 0) {
             char welcomeBuf[256];
-            memset(welcomeBuf, 0, sizeof(welcomeBuf));
             int readBytes = SSL_read(ssl, welcomeBuf, sizeof(welcomeBuf) - 1);
             if (readBytes > 0) {
                 welcomeBuf[readBytes] = '\0';
-                std::cout << "[TLS] ✓ Received: " << welcomeBuf << std::endl;
-
-#ifdef _WIN32
-                Sleep(100);
-#else
-                usleep(100000);
-#endif
-            } else {
-                int err = SSL_get_error(ssl, readBytes);
-                std::cerr << "[TLS] ⚠ Welcome message read failed (SSL error: " << err << ")\n";
-                if (readBytes == 0) {
-                    std::cerr << "[TLS] Connection closed by server during welcome\n";
-                    SSL_free(ssl);
-                    ssl = nullptr;
-                    return false;
-                }
+                std::cout << "[TLS] Received: " << welcomeBuf << std::endl;
             }
-        } else if (selectRet == 0) {
-            std::cout << "[TLS] ⚠ No welcome message (timeout - may be OK)\n";
         }
     }
 
-    // ✅ GIỮ BLOCKING MODE - XÓA ĐOẠN SET NON-BLOCKING Ở ĐÂY
-    std::cout << "[TLS] ✓ Socket remains in BLOCKING mode (correct for TLS)\n";
+    // 4. [QUAN TRỌNG] KHÔI PHỤC NON-BLOCKING CHO QT
+    // Nếu không làm bước này, giao diện Client sẽ bị đơ.
+#ifdef _WIN32
+    mode = 1; // 1 = non-blocking
+    if (ioctlsocket(socket, FIONBIO, &mode) != 0) {
+        std::cerr << "[TLS] Failed to restore non-blocking mode\n";
+        return false;
+    }
+#else
+    if (fcntl(socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+        perror("fcntl F_SETFL non-blocking");
+        return false;
+    }
+#endif
 
+    std::cout << "[TLS] Socket restored to NON-BLOCKING mode for Qt\n";
     return true;
 }
 
@@ -388,7 +185,8 @@ int TLSWrapper::send(const char* data, int len) {
     int sent = SSL_write(ssl, data, len);
     if (sent <= 0) {
         int err = SSL_get_error(ssl, sent);
-        if (err != SSL_ERROR_WANT_WRITE) {
+        // Với Non-blocking socket, WANT_WRITE không phải là lỗi
+        if (err != SSL_ERROR_WANT_WRITE && err != SSL_ERROR_WANT_READ) {
             std::cerr << "[TLS] Write error: " << err << "\n";
         }
     }
@@ -402,10 +200,11 @@ int TLSWrapper::recv(char* buffer, int len) {
     if (received <= 0) {
         int err = SSL_get_error(ssl, received);
 
-        if (err != SSL_ERROR_WANT_READ &&
-            err != SSL_ERROR_WANT_WRITE &&
-            err != SSL_ERROR_ZERO_RETURN) {
-            std::cerr << "[TLS] Read error: " << err << "\n";
+        // Với Non-blocking socket, WANT_READ là bình thường (chưa có dữ liệu)
+        if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
+            if (err != SSL_ERROR_ZERO_RETURN) { // Zero return là đóng kết nối sạch
+                std::cerr << "[TLS] Read error: " << err << "\n";
+            }
         }
     }
     return received;
@@ -413,7 +212,7 @@ int TLSWrapper::recv(char* buffer, int len) {
 
 void TLSWrapper::cleanup() {
     if (ssl) {
-        SSL_shutdown(ssl);
+        // [QUAN TRỌNG] KHÔNG gọi SSL_shutdown() để tránh Crash
         SSL_free(ssl);
         ssl = nullptr;
     }

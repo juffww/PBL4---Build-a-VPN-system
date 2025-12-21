@@ -94,7 +94,7 @@ VPNClient::~VPNClient()
     if (decryptCtx) EVP_CIPHER_CTX_free(decryptCtx);
 }
 
-void VPNClient::connectToServer(const QString& host, int port, const QString& username, const QString& password)
+void VPNClient::connectToServer(const QString& host, int port)
 {
     if (socket->state() != QAbstractSocket::UnconnectedState) {
         socket->disconnectFromHost();
@@ -107,16 +107,11 @@ void VPNClient::connectToServer(const QString& host, int port, const QString& us
     assignedVpnIP.clear();
     udpReady = false;
 
-    socket->setProperty("username", username);
-    socket->setProperty("password", password);
     socket->connectToHost(host, port);
 }
 
 void VPNClient::onConnected()
 {
-    QString username = socket->property("username").toString();
-    QString password = socket->property("password").toString();
-
     qDebug() << "[TLS] Setting up TLS connection...";
 
     if (!socket->waitForConnected(5000)) {
@@ -148,9 +143,8 @@ void VPNClient::onConnected()
     qDebug() << "[TLS] ✓ Handshake successful";
     emit connected();
 
-    if (!username.isEmpty() && !password.isEmpty()) {
         qDebug() << "[AUTH] Sending credentials...";
-        authenticate(username, password);
+        authenticate();
 
         char buffer[4096];
         int totalRead = 0;
@@ -241,12 +235,6 @@ void VPNClient::onConnected()
         qDebug() << "[AUTH] ✓ Both AUTH and UDP_KEY processed";
 
         setupUDPConnection();
-
-    } else {
-        qWarning() << "[AUTH] No credentials";
-        emit error("Missing credentials");
-        return;
-    }
 
     connect(socket, &QTcpSocket::readyRead, this, &VPNClient::onReadyRead);
 
@@ -795,9 +783,9 @@ void VPNClient::onError(QAbstractSocket::SocketError socketError)
     emit error(errorMsg);
 }
 
-void VPNClient::authenticate(const QString& username, const QString& password)
+void VPNClient::authenticate()
 {
-    sendMessage(QString("AUTH %1 %2").arg(username, password));
+    sendMessage(QString("AUTH"));
 }
 
 void VPNClient::sendMessage(const QString& message)

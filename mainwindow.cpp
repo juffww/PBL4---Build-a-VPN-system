@@ -222,27 +222,12 @@ void MainWindow::connectToVPN()
 
     serverEdit->setText(QString("%1:%2").arg(host).arg(port));
 
-    QString username = usernameEdit->text().trimmed();
-    QString password = passwordEdit->text().trimmed();
-
-    if (username.isEmpty()) {
-        QMessageBox::warning(this, "Lỗi", "Vui lòng nhập tên đăng nhập");
-        usernameEdit->setFocus();
-        return;
-    }
-    if (password.isEmpty()) {
-        QMessageBox::warning(this, "Lỗi", "Vui lòng nhập mật khẩu");
-        passwordEdit->setFocus();
-        return;
-    }
-
     connectButton->setEnabled(false);
     progressBar->setVisible(true);
     progressBar->setRange(0, 0);
 
     logTextEdit->append("[INFO] Bắt đầu kết nối VPN...");
     logTextEdit->append(QString("[INFO] => Connecting to: %1:%2").arg(host).arg(port));
-    logTextEdit->append(QString("[INFO] => Username: %1").arg(username));
 
     QTimer::singleShot(10000, this, [this, host, port]() {
         if (!isConnected && !vpnClient->isConnected()) {
@@ -270,7 +255,7 @@ void MainWindow::connectToVPN()
         networkManager = new QNetworkAccessManager(this);
     }
 
-    vpnClient->connectToServer(host, port, username, password);
+    vpnClient->connectToServer(host, port);
 }
 
 
@@ -571,22 +556,11 @@ void MainWindow::setupUI()
     serverEdit->setStyleSheet("QLineEdit { background-color: #f0f0f0; }");
     settingsLayout->addWidget(serverEdit, 0, 1);
 
-    settingsLayout->addWidget(new QLabel("Tên đăng nhập:"), 1, 0);
-    usernameEdit = new QLineEdit();
-    usernameEdit->setPlaceholderText("Nhập tên đăng nhập");
-    settingsLayout->addWidget(usernameEdit, 1, 1);
-
-    settingsLayout->addWidget(new QLabel("Mật khẩu:"), 2, 0);
-    passwordEdit = new QLineEdit();
-    passwordEdit->setEchoMode(QLineEdit::Password);
-    passwordEdit->setPlaceholderText("Nhập mật khẩu");
-    settingsLayout->addWidget(passwordEdit, 2, 1);
-
-    settingsLayout->addWidget(new QLabel("Giao thức:"), 3, 0);
+    settingsLayout->addWidget(new QLabel("Giao thức:"), 1, 0);
     protocolCombo = new QComboBox();
     protocolCombo->addItems({"VPN Protocol", "OpenVPN", "WireGuard"});
     protocolCombo->setCurrentIndex(0);
-    settingsLayout->addWidget(protocolCombo, 3, 1);
+    settingsLayout->addWidget(protocolCombo, 1, 1);
 
     mainLayout->addWidget(settingsGroup);
 

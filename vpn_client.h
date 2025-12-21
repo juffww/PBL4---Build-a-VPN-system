@@ -25,8 +25,8 @@ public:
     ~VPNClient();
 
     void shutdown();
-    void connectToServer(const QString& host, int port, const QString& username, const QString& password);
-    //void connectToServer(const QString& host, int port);
+    //void connectToServer(const QString& host, int port, const QString& username, const QString& password);
+    void connectToServer(const QString& host, int port);
     void disconnectFromServer();
     bool isConnected() const;
 
@@ -62,8 +62,8 @@ private slots:
     void requestUDPKey();
 
 private:
-    void authenticate(const QString& username, const QString& password);
-    //void authenticate();
+    //void authenticate(const QString& username, const QString& password);
+    void authenticate();
     void sendMessage(const QString& message);
     void parseServerMessage(const QString& message);
 
