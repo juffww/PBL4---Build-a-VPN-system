@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <thread>
+#include <csignal>
 #include <chrono>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
@@ -45,6 +46,8 @@ VPNServer::~VPNServer() {
 bool VPNServer::initialize() {    
     std::cout << "[SERVER] Initializing...\n";
     
+    signal(SIGPIPE, SIG_IGN);
+
     clientManager = new ClientManager();
     tunnelManager = new TunnelManager("tun0");
     packetHandler = new PacketHandler();
@@ -175,10 +178,242 @@ void VPNServer::start() {
     acceptConnections();
 }
 
+// void VPNServer::handleClient(int clientId) {
+//     ClientInfo* client = clientManager->getClientInfo(clientId);
+//     if (!client) return;
+
+//     #ifndef _WIN32
+//     int flags = 0;
+//     int flag = 1;
+//     int keepalive = 1;
+//     int keepidle = 60;
+//     int keepintvl = 10;
+//     int keepcnt = 3;
+//     struct timeval tv;
+//     #endif
+//     char buffer[8192];
+//     std::string messageBuffer;
+//     int consecutiveErrors = 0;
+//     const int maxConsecutiveErrors = 5;
+
+//     client->tlsWrapper = new TLSWrapper(true);
+
+//     if (!client->tlsWrapper->loadCertificates(certFile, keyFile)) {
+//         std::cerr << "[TLS] Failed to load certificates for client " << clientId << "\n";
+//         goto cleanup;
+//     }
+
+//     std::cout << "[TLS] Starting handshake with client " << clientId
+//               << " (FD: " << client->socket << ")\n";
+
+//     #ifndef _WIN32
+//     flags = fcntl(client->socket, F_GETFL, 0);
+//     if (flags == -1) {
+//         std::cerr << "[TLS] Failed to get socket flags\n";
+//         goto cleanup;
+//     }
+//     fcntl(client->socket, F_SETFL, flags & ~O_NONBLOCK);
+//     #endif
+
+//     if (!client->tlsWrapper->initTLS(client->socket)) {
+//         std::cerr << "[TLS] Handshake failed with client " << clientId << "\n";
+//         goto cleanup;
+//     }
+
+//     std::cout << "[CLIENT] " << clientId << " TLS secured from "
+//               << client->realIP << ":" << client->port << "\n";
+
+//     #ifndef _WIN32
+//     fcntl(client->socket, F_SETFL, flags | O_NONBLOCK);
+//     std::cout << "[TLS] Socket set to non-blocking mode after handshake\n";
+//     #endif
+
+//     #ifndef _WIN32
+//     tv.tv_sec = 5;
+//     tv.tv_usec = 0;
+//     setsockopt(client->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+//     setsockopt(client->socket, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    
+//     setsockopt(client->socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int));
+    
+//     setsockopt(client->socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+//     setsockopt(client->socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+//     setsockopt(client->socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+//     setsockopt(client->socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
+//     #endif
+
+//     {
+//         std::string welcomeMsg = "WELCOME|VPN Server 2.0.0 TLS|Ready\n";
+//         int sent = client->tlsWrapper->send(welcomeMsg.c_str(), welcomeMsg.length());
+//         if (sent <= 0) {
+//             int err = SSL_get_error(client->tlsWrapper->getSSL(), sent);
+//             if (err != SSL_ERROR_WANT_WRITE) {
+//                 std::cerr << "[TLS] Failed to send welcome message (error: " << err << ")\n";
+//                 ERR_print_errors_fp(stderr);
+//                 goto cleanup;
+//             }
+//             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//             sent = client->tlsWrapper->send(welcomeMsg.c_str(), welcomeMsg.length());
+//             if (sent <= 0) {
+//                 std::cerr << "[TLS] Failed to send welcome message after retry\n";
+//                 goto cleanup;
+//             }
+//         }
+//         std::cout << "[TLS] Welcome message sent (" << sent << " bytes)\n";
+//     }
+
+//     {
+//         while (!shouldStop && client->socket != INVALID_SOCKET) {
+//             int bytesReceived = client->tlsWrapper->recv(buffer, sizeof(buffer));
+            
+//             if (bytesReceived <= 0) {
+//                 int err = SSL_get_error(client->tlsWrapper->getSSL(), bytesReceived);
+
+//                 if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+//                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+//                     consecutiveErrors = 0; 
+//                     continue;
+//                 }
+                
+//                 if (err == SSL_ERROR_ZERO_RETURN) {
+//                     std::cout << "[CLIENT] " << clientId << " closed connection cleanly\n";
+//                     break;
+//                 }
+                
+//                 if (err == SSL_ERROR_SYSCALL) {
+//                     if (errno == 0) {
+//                         std::cout << "[CLIENT] " << clientId << " disconnected (EOF)\n";
+//                     } else {
+//                         std::cout << "[CLIENT] " << clientId << " disconnected (errno: " 
+//                                   << errno << " - " << strerror(errno) << ")\n";
+//                     }
+//                     break;
+//                 }
+                
+//                 consecutiveErrors++;
+//                 if (consecutiveErrors >= maxConsecutiveErrors) {
+//                     std::cerr << "[CLIENT] " << clientId << " too many errors, disconnecting\n";
+//                     break;
+//                 }
+                
+//                 std::cerr << "[CLIENT] " << clientId << " SSL error: " << err << "\n";
+//                 ERR_print_errors_fp(stderr);
+//                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+//                 continue;
+//             }
+
+//             consecutiveErrors = 0;
+
+//             messageBuffer.append(buffer, bytesReceived);
+            
+//             if (messageBuffer.size() > 65536) {
+//                 std::cerr << "[SECURITY] Buffer overflow detected from client " << clientId << "\n";
+//                 break;
+//             }
+
+//             size_t newline;
+//             while ((newline = messageBuffer.find('\n')) != std::string::npos) {
+//                 std::string line = messageBuffer.substr(0, newline);
+//                 messageBuffer.erase(0, newline + 1);
+                
+//                 line.erase(line.find_last_not_of(" \n\r\t") + 1);
+//                 if (line.empty()) continue;
+                
+//                 std::cout << "[CMD] Client " << clientId << ": " 
+//                           << line.substr(0, std::min(size_t(50), line.size())) << "\n";
+                
+//                 if (line == "AUTH") {
+//                     if (!handleAuthCommand(clientId)) 
+//                     {
+//                         std::cout << "Error: Authentication failed\n";
+//                         break;
+//                     }
+//                 }
+//                 else if (line == "UDP_KEY_REQUEST") {
+//                     if (!clientManager->isClientAuthenticated(clientId)) {
+//                         sendTLS(clientId, "ERROR|Not authenticated\n");
+//                         std::cout << "Error: Not authenticated\n";
+//                         continue;
+//                     }
+                    
+//                     std::vector<uint8_t> udpKey(32);
+//                     if (RAND_bytes(udpKey.data(), 32) != 1) {
+//                         sendTLS(clientId, "UDP_KEY_FAIL|Key generation failed\n");
+//                         std::cout << "Error: Not authenticated\n";
+//                         continue;
+//                     }
+                    
+//                     if (!clientManager->setupUDPCrypto(clientId, udpKey)) {
+//                         sendTLS(clientId, "UDP_KEY_FAIL|Setup failed\n");
+//                         std::cout << "Error: Not authenticated\n";
+//                         continue;
+//                     }
+                    
+//                     std::string response = "UDP_KEY|";
+//                     response.append((char*)udpKey.data(), 32);
+//                     response += "\n";
+//                     // std::string b64Key = base64_encode(udpKey.data(), udpKey.size());
+    
+//                     // std::string response = "UDP_KEY|" + b64Key + "\n";
+                    
+//                     int sent = client->tlsWrapper->send(response.c_str(), response.length());
+//                     if (sent <= 0) {
+//                         int err = SSL_get_error(client->tlsWrapper->getSSL(), sent);
+//                         if (err == SSL_ERROR_WANT_WRITE) {
+//                             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//                             sent = client->tlsWrapper->send(response.c_str(), response.length());
+//                         }
+//                         if (sent <= 0) {
+//                             std::cerr << "[TLS] Failed to send UDP key\n";
+//                             break;
+//                         }
+//                     }
+//                     std::cout << "[CRYPTO] UDP key sent to client " << clientId
+//                               << " (" << sent << " bytes)\n";
+//                 }
+//                 else if (line == "PING") {
+//                     handlePingCommand(clientId);
+//                 }
+//                 else if (line == "GET_STATUS") {
+//                     handleStatusCommand(clientId);
+//                 }
+//                 else if (line == "DISCONNECT") {
+//                     sendTLS(clientId, "BYE|Goodbye\n");
+//                     goto cleanup;
+//                 }
+//                 else {
+//                     sendTLS(clientId, "ERROR|Unknown command\n");
+//                 }
+//             }
+//         }
+//     }
+
+// cleanup:
+//     std::cout << "[CLIENT] " << clientId << " cleaning up\n";
+//     // if (client->tlsWrapper) {
+//     //     client->tlsWrapper->cleanup();
+//     //     delete client->tlsWrapper;
+//     //     client->tlsWrapper = nullptr;
+//     // }
+//     // clientManager->removeClient(clientId);
+//     // Lấy lại pointer để cleanup TLS
+//     ClientInfo* clientToClean = clientManager->getClientInfo(clientId);
+//     if (clientToClean && clientToClean->tlsWrapper) {
+//         clientToClean->tlsWrapper->cleanup();
+//         delete clientToClean->tlsWrapper;
+//         clientToClean->tlsWrapper = nullptr;
+//     }
+
+//     // Cuối cùng mới xóa khỏi map
+//     clientManager->removeClient(clientId);
+// }
+
 void VPNServer::handleClient(int clientId) {
+    // Lấy thông tin client ban đầu
     ClientInfo* client = clientManager->getClientInfo(clientId);
     if (!client) return;
 
+    // Các biến cấu hình Socket
     #ifndef _WIN32
     int flags = 0;
     int flag = 1;
@@ -188,11 +423,13 @@ void VPNServer::handleClient(int clientId) {
     int keepcnt = 3;
     struct timeval tv;
     #endif
+
     char buffer[8192];
     std::string messageBuffer;
     int consecutiveErrors = 0;
     const int maxConsecutiveErrors = 5;
 
+    // --- 1. KHỞI TẠO TLS ---
     client->tlsWrapper = new TLSWrapper(true);
 
     if (!client->tlsWrapper->loadCertificates(certFile, keyFile)) {
@@ -204,6 +441,7 @@ void VPNServer::handleClient(int clientId) {
               << " (FD: " << client->socket << ")\n";
 
     #ifndef _WIN32
+    // Đặt về Blocking mode tạm thời cho quá trình Handshake
     flags = fcntl(client->socket, F_GETFL, 0);
     if (flags == -1) {
         std::cerr << "[TLS] Failed to get socket flags\n";
@@ -212,6 +450,7 @@ void VPNServer::handleClient(int clientId) {
     fcntl(client->socket, F_SETFL, flags & ~O_NONBLOCK);
     #endif
 
+    // Thực hiện Handshake
     if (!client->tlsWrapper->initTLS(client->socket)) {
         std::cerr << "[TLS] Handshake failed with client " << clientId << "\n";
         goto cleanup;
@@ -221,27 +460,27 @@ void VPNServer::handleClient(int clientId) {
               << client->realIP << ":" << client->port << "\n";
 
     #ifndef _WIN32
+    // Đặt lại Non-blocking mode cho quá trình truyền nhận dữ liệu
     fcntl(client->socket, F_SETFL, flags | O_NONBLOCK);
-    std::cout << "[TLS] Socket set to non-blocking mode after handshake\n";
-    #endif
-
-    #ifndef _WIN32
+    
+    // Cấu hình Timeout và Keepalive
     tv.tv_sec = 5;
     tv.tv_usec = 0;
     setsockopt(client->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(client->socket, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    
     setsockopt(client->socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int));
-    
     setsockopt(client->socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
     setsockopt(client->socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
     setsockopt(client->socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
     setsockopt(client->socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
     #endif
 
+    // --- 2. GỬI WELCOME MESSAGE ---
     {
         std::string welcomeMsg = "WELCOME|VPN Server 2.0.0 TLS|Ready\n";
         int sent = client->tlsWrapper->send(welcomeMsg.c_str(), welcomeMsg.length());
+        
+        // Retry logic cho Welcome message
         if (sent <= 0) {
             int err = SSL_get_error(client->tlsWrapper->getSSL(), sent);
             if (err != SSL_ERROR_WANT_WRITE) {
@@ -249,6 +488,7 @@ void VPNServer::handleClient(int clientId) {
                 ERR_print_errors_fp(stderr);
                 goto cleanup;
             }
+            // Thử lại một lần nữa nếu socket bận
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             sent = client->tlsWrapper->send(welcomeMsg.c_str(), welcomeMsg.length());
             if (sent <= 0) {
@@ -256,153 +496,165 @@ void VPNServer::handleClient(int clientId) {
                 goto cleanup;
             }
         }
-        std::cout << "[TLS] Welcome message sent (" << sent << " bytes)\n";
     }
 
-    {
-        while (!shouldStop && client->socket != INVALID_SOCKET) {
-            int bytesReceived = client->tlsWrapper->recv(buffer, sizeof(buffer));
-            
-            if (bytesReceived <= 0) {
-                int err = SSL_get_error(client->tlsWrapper->getSSL(), bytesReceived);
+    // --- 3. VÒNG LẶP CHÍNH (MAIN LOOP) ---
+    while (!shouldStop) {
+        // [QUAN TRỌNG] Kiểm tra pointer an toàn mỗi vòng lặp
+        // Để đảm bảo client chưa bị xóa bởi luồng khác
+        ClientInfo* c = clientManager->getClientInfo(clientId);
+        if (!c || c->socket == INVALID_SOCKET) break;
 
-                if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                    consecutiveErrors = 0; 
+        // Đọc dữ liệu
+        // int bytesReceived = c->tlsWrapper->recv(buffer, sizeof(buffer));
+        
+        // // Xử lý kết quả đọc
+        // if (bytesReceived <= 0) {
+        //     int err = SSL_get_error(c->tlsWrapper->getSSL(), bytesReceived);
+
+        //     // Nếu Socket chưa có dữ liệu hoặc đang bận ghi -> Chờ và thử lại
+        //     if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+        //         std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Giảm CPU load
+        //         consecutiveErrors = 0; 
+        //         continue;
+        //     }
+            
+        //     // Client đóng kết nối
+        //     if (err == SSL_ERROR_ZERO_RETURN) {
+        //         std::cout << "[CLIENT] " << clientId << " closed connection cleanly\n";
+        //         break;
+        //     }
+            
+        //     // Lỗi kết nối
+        //     if (err == SSL_ERROR_SYSCALL) {
+        //         if (errno == 0) {
+        //             std::cout << "[CLIENT] " << clientId << " disconnected (EOF)\n";
+        //         } else {
+        //             std::cout << "[CLIENT] " << clientId << " disconnected (errno: " 
+        //                       << errno << " - " << strerror(errno) << ")\n";
+        //         }
+        //         break;
+        //     }
+            
+        //     // Đếm lỗi liên tiếp để tránh vòng lặp vô tận
+        //     consecutiveErrors++;
+        //     if (consecutiveErrors >= maxConsecutiveErrors) {
+        //         std::cerr << "[CLIENT] " << clientId << " too many errors, disconnecting\n";
+        //         break;
+        //     }
+            
+        //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        //     continue;
+        // }
+        int bytesReceived = c->tlsWrapper->recv(buffer, sizeof(buffer));
+
+        if (bytesReceived <= 0) {
+            int err = SSL_get_error(c->tlsWrapper->getSSL(), bytesReceived);
+
+            // [FIX] Xử lý lỗi gọn gàng hơn
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                consecutiveErrors = 0; 
+                continue;
+            }
+            
+            // [FIX] Chỉ in log lỗi nếu thực sự là lỗi, không in quá nhiều
+            if (err == SSL_ERROR_SYSCALL || err == SSL_ERROR_SSL) {
+                std::cerr << "[CLIENT] " << clientId << " Socket error: " << err << " (" << strerror(errno) << ")\n";
+            } else if (err == SSL_ERROR_ZERO_RETURN) {
+                std::cout << "[CLIENT] " << clientId << " Disconnected cleanly.\n";
+            }
+
+            break; // Thoát vòng lặp ngay lập tức, không lặp lại 5 lần
+        }
+
+        consecutiveErrors = 0;
+
+        // Xử lý Buffer (Nối dữ liệu và tách dòng lệnh)
+        messageBuffer.append(buffer, bytesReceived);
+        
+        if (messageBuffer.size() > 65536) {
+            std::cerr << "[SECURITY] Buffer overflow detected from client " << clientId << "\n";
+            break;
+        }
+
+        size_t newline;
+        while ((newline = messageBuffer.find('\n')) != std::string::npos) {
+            std::string line = messageBuffer.substr(0, newline);
+            messageBuffer.erase(0, newline + 1);
+            
+            line.erase(line.find_last_not_of(" \n\r\t") + 1);
+            if (line.empty()) continue;
+            
+            std::cout << "[CMD] Client " << clientId << ": " 
+                      << line.substr(0, std::min(size_t(50), line.size())) << "\n";
+            
+            // --- XỬ LÝ LỆNH ---
+            
+            // 1. Lệnh AUTH (Không mật khẩu)
+            if (line == "AUTH") {
+                if (!handleAuthCommand(clientId)) {
+                    std::cout << "Error: Authentication failed\n";
+                    goto cleanup;
+                }
+            }
+            // 2. Lệnh UDP_KEY_REQUEST
+            else if (line == "UDP_KEY_REQUEST") {
+                if (!clientManager->isClientAuthenticated(clientId)) {
+                    sendTLS(clientId, "ERROR|Not authenticated\n");
                     continue;
                 }
                 
-                if (err == SSL_ERROR_ZERO_RETURN) {
-                    std::cout << "[CLIENT] " << clientId << " closed connection cleanly\n";
-                    break;
+                std::vector<uint8_t> udpKey(32);
+                if (RAND_bytes(udpKey.data(), 32) != 1) {
+                    sendTLS(clientId, "UDP_KEY_FAIL|Key generation failed\n");
+                    continue;
                 }
                 
-                if (err == SSL_ERROR_SYSCALL) {
-                    if (errno == 0) {
-                        std::cout << "[CLIENT] " << clientId << " disconnected (EOF)\n";
-                    } else {
-                        std::cout << "[CLIENT] " << clientId << " disconnected (errno: " 
-                                  << errno << " - " << strerror(errno) << ")\n";
-                    }
-                    break;
+                if (!clientManager->setupUDPCrypto(clientId, udpKey)) {
+                    sendTLS(clientId, "UDP_KEY_FAIL|Setup failed\n");
+                    continue;
                 }
                 
-                consecutiveErrors++;
-                if (consecutiveErrors >= maxConsecutiveErrors) {
-                    std::cerr << "[CLIENT] " << clientId << " too many errors, disconnecting\n";
-                    break;
-                }
+                std::string response = "UDP_KEY|";
+                response.append((char*)udpKey.data(), 32);
+                response += "\n";
                 
-                std::cerr << "[CLIENT] " << clientId << " SSL error: " << err << "\n";
-                ERR_print_errors_fp(stderr);
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
+                sendTLS(clientId, response);
+                std::cout << "[CRYPTO] UDP key sent to client " << clientId << "\n";
             }
-
-            consecutiveErrors = 0;
-
-            messageBuffer.append(buffer, bytesReceived);
-            
-            if (messageBuffer.size() > 65536) {
-                std::cerr << "[SECURITY] Buffer overflow detected from client " << clientId << "\n";
-                break;
+            // 3. Các lệnh khác
+            else if (line == "PING") {
+                handlePingCommand(clientId);
             }
-
-            size_t newline;
-            while ((newline = messageBuffer.find('\n')) != std::string::npos) {
-                std::string line = messageBuffer.substr(0, newline);
-                messageBuffer.erase(0, newline + 1);
-                
-                line.erase(line.find_last_not_of(" \n\r\t") + 1);
-                if (line.empty()) continue;
-                
-                std::cout << "[CMD] Client " << clientId << ": " 
-                          << line.substr(0, std::min(size_t(50), line.size())) << "\n";
-                
-                // if (line.rfind("AUTH ", 0) == 0) {
-                //     std::istringstream iss(line);
-                //     std::string cmd, username, password;
-                //     iss >> cmd >> username >> password;
-                //     if (!handleAuthCommand(clientId, iss)) 
-                //     {
-                //         std::cout << "Error: Authentication failed\n";
-                //         break;
-                //     }
-                // }
-                if (line == "AUTH") { // Chỉ kiểm tra nếu lệnh đúng bằng "AUTH"
-                    // Không cần istringstream hay đọc user/pass nữa
-                    if (!handleAuthCommand(clientId)) 
-                    {
-                        std::cout << "Error: Authentication failed\n";
-                        break;
-                    }
-                }
-                else if (line == "UDP_KEY_REQUEST") {
-                    if (!clientManager->isClientAuthenticated(clientId)) {
-                        sendTLS(clientId, "ERROR|Not authenticated\n");
-                        std::cout << "Error: Not authenticated\n";
-                        continue;
-                    }
-                    
-                    std::vector<uint8_t> udpKey(32);
-                    if (RAND_bytes(udpKey.data(), 32) != 1) {
-                        sendTLS(clientId, "UDP_KEY_FAIL|Key generation failed\n");
-                        std::cout << "Error: Not authenticated\n";
-                        continue;
-                    }
-                    
-                    if (!clientManager->setupUDPCrypto(clientId, udpKey)) {
-                        sendTLS(clientId, "UDP_KEY_FAIL|Setup failed\n");
-                        std::cout << "Error: Not authenticated\n";
-                        continue;
-                    }
-                    
-                    std::string response = "UDP_KEY|";
-                    response.append((char*)udpKey.data(), 32);
-                    response += "\n";
-                    // std::string b64Key = base64_encode(udpKey.data(), udpKey.size());
-    
-                    // std::string response = "UDP_KEY|" + b64Key + "\n";
-                    
-                    int sent = client->tlsWrapper->send(response.c_str(), response.length());
-                    if (sent <= 0) {
-                        int err = SSL_get_error(client->tlsWrapper->getSSL(), sent);
-                        if (err == SSL_ERROR_WANT_WRITE) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                            sent = client->tlsWrapper->send(response.c_str(), response.length());
-                        }
-                        if (sent <= 0) {
-                            std::cerr << "[TLS] Failed to send UDP key\n";
-                            break;
-                        }
-                    }
-                    std::cout << "[CRYPTO] UDP key sent to client " << clientId
-                              << " (" << sent << " bytes)\n";
-                }
-                else if (line == "PING") {
-                    handlePingCommand(clientId);
-                }
-                else if (line == "GET_STATUS") {
-                    handleStatusCommand(clientId);
-                }
-                else if (line == "DISCONNECT") {
-                    sendTLS(clientId, "BYE|Goodbye\n");
-                    goto cleanup;
-                }
-                else {
-                    sendTLS(clientId, "ERROR|Unknown command\n");
-                }
+            else if (line == "GET_STATUS") {
+                handleStatusCommand(clientId);
+            }
+            else if (line == "DISCONNECT") {
+                sendTLS(clientId, "BYE|Goodbye\n");
+                goto cleanup;
+            }
+            else {
+                sendTLS(clientId, "ERROR|Unknown command\n");
             }
         }
     }
 
+// --- 4. CLEANUP SECTION (AN TOÀN) ---
 cleanup:
-    std::cout << "[CLIENT] " << clientId << " cleaning up\n";
-    if (client->tlsWrapper) {
-        client->tlsWrapper->cleanup();
-        delete client->tlsWrapper;
-        client->tlsWrapper = nullptr;
+    std::cout << "[CLIENT] " << clientId << " cleaning up thread\n";
+    
+    // [QUAN TRỌNG] Lấy lại pointer để kiểm tra tính hợp lệ trước khi truy cập
+    // Tránh trường hợp ClientManager đã xóa nó rồi.
+    ClientInfo* clientToClean = clientManager->getClientInfo(clientId);
+    
+    if (clientToClean && clientToClean->tlsWrapper) {
+        clientToClean->tlsWrapper->cleanup();
+        delete clientToClean->tlsWrapper;
+        clientToClean->tlsWrapper = nullptr;
     }
+
+    // Cuối cùng mới xóa khỏi map quản lý
     clientManager->removeClient(clientId);
 }
 
@@ -589,9 +841,16 @@ void VPNServer::acceptConnections() {
         
         int clientId = clientManager->addClient(clientSocket, clientIP, clientPort);
         
-        clientThreads.emplace_back([this, clientId]() {
+        // clientThreads.emplace_back([this, clientId]() {
+        //     handleClient(clientId);
+        // });
+        // TẠO THREAD VÀ DETACH LUÔN
+        std::thread([this, clientId]() {
             handleClient(clientId);
-        });
+        }).detach(); // <--- SỬA THÀNH DETACH
+        
+        // Không cần push vào clientThreads vector nữa nếu dùng detach
+        // Nếu muốn quản lý số lượng thì dùng biến đếm atomic
     }
 }
 
@@ -622,6 +881,20 @@ bool VPNServer::processClientMessage(int clientId, const std::string& message) {
     }
     
     return true;
+}
+
+void VPNServer::cleanupFinishedThreads() {
+    auto it = clientThreads.begin();
+    while (it != clientThreads.end()) {
+        if (it->joinable()) {
+            // Kiểm tra xem thread đã xong chưa là rất khó với std::thread cơ bản
+            // Cách đơn giản nhất: detach thread ngay từ đầu nếu không cần quản lý chặt
+            // HOẶC chỉ join tất cả khi stop().
+            
+            // Giải pháp NHANH NHẤT cho bạn: Detach thread
+        }
+        ++it;
+    }
 }
 
 bool VPNServer::handleAuthCommand(int clientId) {

@@ -116,18 +116,20 @@ private:
     std::string getCurrentTime();
 
     struct ClientCrypto {
+        EVP_CIPHER_CTX* encryptCtx = nullptr; 
+        EVP_CIPHER_CTX* decryptCtx = nullptr;
+
         std::vector<uint8_t> udpSharedKey;  
         uint64_t txCounter;
         
-        EVP_CIPHER_CTX *encryptCtx;
-        EVP_CIPHER_CTX *decryptCtx;
         uint64_t rxCounter;
         uint64_t rxWindowBitmap;
         bool ready;
 
         std::mutex cryptoMutex;
         
-        ClientCrypto() : txCounter(0), rxCounter(0), ready(false) {}
+        ClientCrypto() : encryptCtx(nullptr), decryptCtx(nullptr), ready(false), 
+                     txCounter(0), rxCounter(0), rxWindowBitmap(0) {}
     };
     std::map<int, ClientCrypto> cryptoMap;
     std::mutex cryptoMutex;

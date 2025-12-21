@@ -112,6 +112,8 @@ public:
 
     //TLS
     void sendTLS(int clientId, const std::string& message);
+
+    void cleanupFinishedThreads();
 };
 
 #endif
