@@ -188,27 +188,27 @@ void VPNClient::onConnected()
 
                 // Check for UDP_KEY (CRITICAL: Must be 41 bytes: "UDP_KEY|" + 32 bytes + "\n")
                 int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
-                    if (udpKeyPos != -1 && messageBuffer.size() >= (udpKeyPos + 41)) {
-                        // Extract exactly 41 bytes: "UDP_KEY|" (8) + key (32) + "\n" (1)
-                        QByteArray keyLine = messageBuffer.mid(udpKeyPos, 41);
+                if (udpKeyPos != -1 && messageBuffer.size() >= (udpKeyPos + 41)) {
+                    // Extract exactly 41 bytes: "UDP_KEY|" (8) + key (32) + "\n" (1)
+                    QByteArray keyLine = messageBuffer.mid(udpKeyPos, 41);
 
-                        qDebug() << "[CRYPTO] Found UDP_KEY at position" << udpKeyPos
-                                 << "size:" << keyLine.size();
+                    qDebug() << "[CRYPTO] Found UDP_KEY at position" << udpKeyPos
+                             << "size:" << keyLine.size();
 
-                        if (keyLine.size() == 41 && keyLine[40] == '\n') {
-                            QByteArray keyData = keyLine.mid(8, 32); // Skip "UDP_KEY|"
+                    if (keyLine.size() == 41 && keyLine[40] == '\n') {
+                        QByteArray keyData = keyLine.mid(8, 32); // Skip "UDP_KEY|"
 
-                            sharedKey.assign(keyData.begin(), keyData.end());
-                            cryptoReady = true;
-                            txCounter = 0;
-                            rxCounter = 0;
-                            rxWindowBitmap = 0;
+                        sharedKey.assign(keyData.begin(), keyData.end());
+                        cryptoReady = true;
+                        txCounter = 0;
+                        rxCounter = 0;
+                        rxWindowBitmap = 0;
 
-                            qDebug() << "[CRYPTO] ✓ UDP encryption ready";
+                        qDebug() << "[CRYPTO] ✓ UDP encryption ready";
 
-                            // Remove processed data
-                            messageBuffer.remove(udpKeyPos, 41);
-                            keyReceived = true;
+                        // Remove processed data
+                        messageBuffer.remove(udpKeyPos, 41);
+                        keyReceived = true;
                     }
                 }
                 if (authReceived && keyReceived) break;
