@@ -731,7 +731,6 @@ void MainWindow::updateConnectionStatus()
 void MainWindow::loadSettings()
 {
     QSettings settings;
-    usernameEdit->setText(settings.value("username", "").toString());
     protocolCombo->setCurrentText(settings.value("protocol", "VPN Protocol").toString());
     restoreGeometry(settings.value("geometry").toByteArray());
 }
@@ -739,7 +738,6 @@ void MainWindow::loadSettings()
 void MainWindow::saveSettings()
 {
     QSettings settings;
-    settings.setValue("username", usernameEdit->text());
     settings.setValue("protocol", protocolCombo->currentText());
     settings.setValue("geometry", saveGeometry());
 }
