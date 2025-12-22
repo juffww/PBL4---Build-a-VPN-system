@@ -163,6 +163,24 @@ void MainWindow::setupVPNClientConnections()
     connect(vpnClient, &VPNClient::statusReceived, this, [this](const QString& status) {
         logTextEdit->append(QString("[STATUS] %1").arg(status));
     });
+
+    connect(vpnClient, &VPNClient::pingUpdated, this, [this](int ms) {
+        currentLatency = ms;
+        latencyLabel->setText(QString("Ping: %1 ms").arg(ms));
+    });
+}
+
+QString MainWindow::formatBytes(quint64 bytes)
+{
+    if (bytes < 1024)
+        return QString("%1 B").arg(bytes);
+    if (bytes < 1024 * 1024)
+        return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1); // 1 số lẻ
+    if (bytes < 1024 * 1024 * 1024)
+        return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 2); // 2 số lẻ
+
+    // Nếu lớn hơn 1GB
+    return QString("%1 GB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
 }
 
 void MainWindow::connectToVPN()
@@ -334,39 +352,50 @@ void MainWindow::toggleWindow()
 void MainWindow::updateStats()
 {
     if (isConnected) {
-        static quint64 totalDownload = 0;
-        static quint64 totalUpload = 0;
-        totalDownload += (rand() % 1000 + 100);
-        totalUpload += (rand() % 500 + 50);
+        vpnClient->sendPing();
 
-        downloadLabel->setText(QString("↓ %1 KB").arg(totalDownload));
-        uploadLabel->setText(QString("↑ %1 KB").arg(totalUpload));
+        quint64 currentTotalRx = vpnClient->getBytesReceived();
+        quint64 currentTotalTx = vpnClient->getBytesSent();
+
+        quint64 downloadSpeed = currentTotalRx - lastTotalDownload;
+        quint64 uploadSpeed = currentTotalTx - lastTotalUpload;
+
+        lastTotalDownload = currentTotalRx;
+        lastTotalUpload = currentTotalTx;
+
+        downloadLabel->setText(QString("↓ %1/s").arg(formatBytes(downloadSpeed)));
+        uploadLabel->setText(QString("↑ %1/s").arg(formatBytes(uploadSpeed)));
+
+        totalDownloadLabel->setText(QString(" %1").arg(formatBytes(currentTotalRx)));
+        totalUploadLabel->setText(QString(" %1").arg(formatBytes(currentTotalTx)));
+
+        double loss = vpnClient->getPacketLoss();
+        packetLossLabel->setText(QString("Loss: %1 %").arg(loss, 0, 'f', 1));
 
         if (connectionTimeStarted) {
-            int totalSeconds = connectionStartTime.secsTo(QTime::currentTime());
-            if (totalSeconds < 0) {
-                totalSeconds += 24 * 3600;
-            }
-
+            qint64 totalSeconds = connectionStartTime.secsTo(QTime::currentTime());
             int hours = totalSeconds / 3600;
             int minutes = (totalSeconds % 3600) / 60;
             int seconds = totalSeconds % 60;
-
             connectionTimeLabel->setText(QString("Thời gian: %1:%2:%3")
                                              .arg(hours, 2, 10, QChar('0'))
                                              .arg(minutes, 2, 10, QChar('0'))
                                              .arg(seconds, 2, 10, QChar('0')));
         }
     } else {
-        totalDownload = 0;
-        totalUpload = 0;
+        lastTotalDownload = 0;
+        lastTotalUpload = 0;
+        currentLatency = -1;
 
-        latencyLabel->setText("Ping: 100 ms");
-        packetLossLabel->setText("Loss: 0 %");
-        packetLossLabel->setStyleSheet("color: #555;");
+        latencyLabel->setText("Ping: - ms");
+        packetLossLabel->setText("Loss: - %");
 
-        downloadLabel->setText("↓ 0 KB");
-        uploadLabel->setText("↑ 0 KB");
+        downloadLabel->setText("↓ 0 B/s");
+        uploadLabel->setText("↑ 0 B/s");
+
+        totalDownloadLabel->setText(" 0 B");
+        totalUploadLabel->setText(" 0 B");
+
         connectionTimeLabel->setText("Thời gian: 00:00:00");
         connectionTimeStarted = false;
     }
@@ -505,26 +534,33 @@ void MainWindow::setupUI()
     statusLayout->addWidget(statusLabel);
 
     QHBoxLayout *statsLayout = new QHBoxLayout();
-    downloadLabel = new QLabel("↓ 0 KB");
-    uploadLabel = new QLabel("↑ 0 KB");
+    downloadLabel = new QLabel("↓ 0 KB/s");
+    uploadLabel = new QLabel("↑ 0 KB/s");
+
+    totalDownloadLabel = new QLabel("Tổng DL: 0 B");
+    totalDownloadLabel->setStyleSheet("color: blue;");
+
+    totalUploadLabel = new QLabel("Tổng UL: 0 B");
+    totalUploadLabel->setStyleSheet("color: orange;");
 
     latencyLabel = new QLabel("Ping: - ms");
-    //latencyLabel->setStyleSheet("color: #555;");
-
     packetLossLabel = new QLabel("Loss: - %");
-    //packetLossLabel->setStyleSheet("color: #555;");
-
     connectionTimeLabel = new QLabel("Thời gian: 00:00:00");
 
     statsLayout->addWidget(downloadLabel);
+    statsLayout->addWidget(totalDownloadLabel);
     statsLayout->addSpacing(15);
+
     statsLayout->addWidget(uploadLabel);
+    statsLayout->addWidget(totalUploadLabel);
     statsLayout->addSpacing(15);
+
     statsLayout->addWidget(latencyLabel);
     statsLayout->addSpacing(15);
     statsLayout->addWidget(packetLossLabel);
     statsLayout->addStretch();
     statsLayout->addWidget(connectionTimeLabel);
+
     statusLayout->addLayout(statsLayout);
 
     mainLayout->addWidget(statusGroup);

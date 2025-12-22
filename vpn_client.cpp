@@ -30,7 +30,10 @@ VPNClient::VPNClient(QObject *parent)
     authenticated(false), serverPort(0), clientId(0),
     udpHandshakeTimer(nullptr),
     networkManager(nullptr), totalBytesReceived(0),
-    totalBytesSent(0), tlsWrapper(nullptr),
+    totalBytesSent(0),
+    totalPacketsReceived(0),
+    totalDecryptErrors(0),
+    tlsWrapper(nullptr),
     pendingPacketSize(0), isReadingPacketData(false), cryptoReady(false),
     txCounter(0), rxCounter(0), rxWindowBitmap(0)
 {
@@ -453,8 +456,10 @@ void VPNClient::onUdpReadyRead()
                     if (written > 0) {
                         totalBytesReceived += written;
                         packetsProcessed++;
+                        totalPacketsReceived++;
                     }
                 } else {
+                    totalDecryptErrors++;
                     static int decryptFail = 0;
                     if (++decryptFail % 100 == 0) {
                         qWarning() << "[SECURITY] Rejected" << decryptFail
@@ -501,28 +506,20 @@ void VPNClient::onReadyRead() {
                         rxCounter = 0;
                         qDebug() << "[CRYPTO] ✓ UDP encryption ready (Raw Binary Key received)";
 
-                        // Xóa gói tin Key khỏi buffer để vòng lặp text bên dưới không đọc nhầm
                         messageBuffer.remove(udpKeyPos, 41);
 
                         setupUDPConnection();
                     } else {
                         qWarning() << "[CRYPTO] Malformed UDP_KEY packet (missing newline at end)";
-                        // Nếu lỗi định dạng, có thể xóa tạm phần header để tìm lại lần sau hoặc ngắt kết nối
                         messageBuffer.remove(udpKeyPos, 8);
                     }
                 }
-                // Nếu chưa đủ 41 bytes, chờ lần đọc tiếp theo (không làm gì cả)
             }
-            // --- KẾT THÚC PHẦN SỬA ĐỔI ---
-
-            // Xử lý các tin nhắn văn bản thông thường (text based)
             int newlinePos;
             while ((newlinePos = messageBuffer.indexOf('\n')) != -1) {
                 QByteArray line = messageBuffer.left(newlinePos);
-                // Xóa dòng đã đọc (+1 để xóa cả ký tự \n)
                 messageBuffer.remove(0, newlinePos + 1);
 
-                // Bỏ qua nếu dòng này là một phần của gói UDP_KEY (đề phòng sót)
                 if (line.startsWith("UDP_KEY|")) continue;
 
                 QString message = QString::fromUtf8(line).trimmed();
@@ -663,6 +660,19 @@ void VPNClient::setupUDPConnection()
     emit statusReceived("VPN connection established");
 }
 
+void VPNClient::sendPing()
+{
+    if (authenticated) {
+        m_pingSentTime = QDateTime::currentMSecsSinceEpoch();
+        sendMessage("PING");
+    }
+}
+
+double VPNClient::getPacketLoss() {
+    if (totalPacketsReceived == 0) return 0.0;
+    return ((double)totalDecryptErrors / (double)(totalPacketsReceived + totalDecryptErrors)) * 100.0;
+}
+
 void VPNClient::parseServerMessage(const QString& message)
 {
     qDebug() << "[PARSE]" << message;
@@ -713,7 +723,15 @@ void VPNClient::parseServerMessage(const QString& message)
         emit error(message.mid(6));
     }
     else if (message.startsWith("PONG|")) {
-        qDebug() << "[PING] Received PONG";
+        qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        int latency = currentTime - m_pingSentTime;
+
+        if (latency < 0) latency = 0;
+
+        // [DEBUG] Log ra latency tính được
+        qDebug() << "[PING] Calculated Latency:" << latency << "ms";
+
+        emit pingUpdated(latency);
     }
 }
 

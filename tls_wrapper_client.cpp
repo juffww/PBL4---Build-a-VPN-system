@@ -268,10 +268,26 @@ int TLSWrapper::recv(char* buffer, int len) {
     return received;
 }
 
+// void TLSWrapper::cleanup() {
+//     if (ssl) {
+//         SSL_shutdown(ssl);
+//         SSL_free(ssl);
+//         ssl = nullptr;
+//     }
+//     if (ctx) {
+//         SSL_CTX_free(ctx);
+//         ctx = nullptr;
+//     }
+// }
+// Trong tls_wrapper_client.cpp
+
 void TLSWrapper::cleanup() {
     if (ssl) {
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
+        // KHÔNG gọi SSL_shutdown(ssl) theo cách mặc định vì nó sẽ block UI
+        // Nếu muốn gọi, phải set mode quiet để không chờ đợi
+        SSL_set_shutdown(ssl, SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN);
+
+        SSL_free(ssl); // Chỉ giải phóng bộ nhớ, không gửi/nhận gì cả -> Rất nhanh
         ssl = nullptr;
     }
     if (ctx) {

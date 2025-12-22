@@ -25,7 +25,6 @@ public:
     ~VPNClient();
 
     void shutdown();
-    //void connectToServer(const QString& host, int port, const QString& username, const QString& password);
     void connectToServer(const QString& host, int port);
     void disconnectFromServer();
     bool isConnected() const;
@@ -35,6 +34,9 @@ public:
     QString getCurrentVPNIP() const { return assignedVpnIP; }
     quint64 getBytesReceived() const;
     quint64 getBytesSent() const;
+
+    void sendPing();
+    double getPacketLoss();
 
 public slots:
     void startTUNTrafficGeneration();
@@ -51,6 +53,8 @@ signals:
     void statusReceived(const QString& status);
     void trafficStatsUpdated(quint64 bytesSent, quint64 bytesReceived);
 
+    void pingUpdated(int ms);
+
 private slots:
     void onConnected();
     void onDisconnected();
@@ -62,7 +66,6 @@ private slots:
     void requestUDPKey();
 
 private:
-    //void authenticate(const QString& username, const QString& password);
     void authenticate();
     void sendMessage(const QString& message);
     void parseServerMessage(const QString& message);
@@ -122,6 +125,10 @@ private:
     uint64_t txCounter;
     uint64_t rxCounter;
     uint64_t rxWindowBitmap;
+
+    qint64 m_pingSentTime;
+    quint64 totalPacketsReceived;
+    quint64 totalDecryptErrors;
 };
 
 #endif

@@ -211,6 +211,12 @@ bool TUNInterface::configureClientMode() {
     std::string dnsVPN = "netsh interface ip set dns name=\"" + interfaceName + "\" source=static addr=8.8.8.8 validate=no";
     executeCommand(dnsVPN);
 
+    // Disable DNS trên physical interfaces
+    std::string disableDNS = "powershell -Command \"Get-NetAdapter | "
+                             "Where-Object {$_.Name -ne '" + interfaceName + "'} | "
+                                               "Set-DnsClientServerAddress -ServerAddresses @()\"";
+    executeCommand(disableDNS);
+
     std::string dns2 = "netsh interface ip add dns name=\"" + interfaceName + "\" addr=8.8.4.4 index=2 validate=no";
     executeCommand(dns2);
 

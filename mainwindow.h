@@ -72,7 +72,7 @@ private:
     QTextEdit *logTextEdit;
     QProgressBar *progressBar;
 
-    QGroupBox *regionGroup; //thêm radio button
+    QGroupBox *regionGroup;
     QRadioButton *usRadioButton;
     QRadioButton *sgRadioButton;
     QRadioButton *ukRadioButton;
@@ -101,6 +101,15 @@ private:
     QPushButton* trafficButton;
     QTimer* webTrafficTimer;
     bool trafficRunning;
+
+    quint64 lastTotalDownload = 0;
+    quint64 lastTotalUpload = 0;
+    int currentLatency = -1;
+
+    QLabel *totalDownloadLabel;
+    QLabel *totalUploadLabel;
+    // Hàm tiện ích để format số (Ví dụ: 1024 -> "1 KB")
+    QString formatBytes(quint64 bytes);
 };
 
 #endif
