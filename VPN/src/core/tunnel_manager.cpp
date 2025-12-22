@@ -85,6 +85,16 @@ void TunnelManager::setupNATRules(const std::string& subnet) {
 
     tunInterface->executeCommand("iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu");
 
+    //Cho phép lưu lượng phản hồi (Stateful Inspection)
+    /*
+    Cho phép mọi gói tin có nguồn là IP VPN (10.8.0.x) đi qua
+
+    Cho phép mọi gói tin có đích là IP VPN (10.8.0.x) đi qua
+
+    Cho phép mọi gói tin đi vào từ card ảo (tun0)
+
+    Cho phép mọi gói tin đi ra card ảo (tun0)
+    */
     tunInterface->executeCommand("iptables -I FORWARD 1 -m state --state RELATED,ESTABLISHED -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -s " + subnetWithMask + " -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -d " + subnetWithMask + " -j ACCEPT");
