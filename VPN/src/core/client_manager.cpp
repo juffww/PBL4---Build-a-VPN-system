@@ -199,41 +199,6 @@ void ClientManager::handleClientPacket(int clientId, const char* packet, int siz
     packetHandler->handleClientPacket(clientId, packet, size);
 }
 
-// bool ClientManager::removeClient(int clientId) {
-//     {
-//         std::lock_guard<std::mutex> lock(cryptoMutex);
-//         auto cryptoIt = cryptoMap.find(clientId);
-//         if (cryptoIt != cryptoMap.end()) {
-//             if (cryptoIt->second.encryptCtx) {
-//                 EVP_CIPHER_CTX_free(cryptoIt->second.encryptCtx);
-//             }
-//             if (cryptoIt->second.decryptCtx) {
-//                 EVP_CIPHER_CTX_free(cryptoIt->second.decryptCtx);
-//             }
-//             cryptoMap.erase(cryptoIt);
-//             std::cout << "[CRYPTO] Cleaned up contexts for client " << clientId << "\n";
-//         }
-//     }
-//     // --- KẾT THÚC PHẦN THÊM ---
-
-//     std::lock_guard<std::mutex> lock(clientsMutex);
-//     auto it = clients.find(clientId);
-//     if (it != clients.end()) {
-//         if (it->second.socket != INVALID_SOCKET) {
-//             close(it->second.socket);
-//         }
-        
-//         if (it->second.ipAssigned) {
-//             ipPool->releaseIP(it->second.assignedVpnIP);
-//         }
-        
-//         std::cout << "[CLIENT] Disconnected - ID: " << clientId << "\n";
-//         clients.erase(it);
-//         return true;
-//     }
-//     return false;
-// }
-
 bool ClientManager::removeClient(int clientId) {
     // 1. Xóa Crypto trước
     {
@@ -270,26 +235,6 @@ bool ClientManager::removeClient(int clientId) {
     return false;
 }
 
-// bool ClientManager::disconnectClient(int clientId) {
-//     std::lock_guard<std::mutex> lock(clientsMutex);
-//     auto it = clients.find(clientId);
-//     if (it != clients.end()) {
-//         if (it->second.socket != INVALID_SOCKET) {
-//             sendToClient(clientId, "DISCONNECT|Server requested disconnect\n");
-//             close(it->second.socket);
-//             it->second.socket = INVALID_SOCKET;
-//         }
-        
-//         if (it->second.ipAssigned) {
-//             ipPool->releaseIP(it->second.assignedVpnIP);
-//         }
-        
-//         clients.erase(it);
-//         std::cout << "[CLIENT] Kicked - ID: " << clientId << "\n";
-//         return true;
-//     }
-//     return false;
-// }
 bool ClientManager::disconnectClient(int clientId) {
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = clients.find(clientId);
@@ -412,48 +357,6 @@ std::vector<std::string> ClientManager::getClientStats() {
     return stats;
 }
 
-
-// bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key) {
-//     std::lock_guard<std::mutex> lock(cryptoMutex);
-    
-//     if (key.size() != 32) {
-//         std::cerr << "[SECURITY] Invalid key size: " << key.size() << "\n";
-//         return false;
-//     }
-
-//     ClientCrypto& crypto = cryptoMap[clientId]; 
-
-//     crypto.udpSharedKey = key;
-//     // After setting crypto.udpSharedKey = key;
-//     uint8_t firstByte = key[0];
-//     uint8_t lastByte = key[31];
-//     std::cout << "[DEBUG] Client " << clientId << " Key Check: " 
-//               << std::hex << (int)firstByte << "..." << (int)lastByte << std::dec << "\n";
-
-//     crypto.ready = true;
-//     crypto.txCounter = 0;
-//     crypto.rxCounter = 0;
-//     crypto.rxWindowBitmap = 0;
-
-//     if (crypto.encryptCtx) EVP_CIPHER_CTX_free(crypto.encryptCtx);
-//     if (crypto.decryptCtx) EVP_CIPHER_CTX_free(crypto.decryptCtx);
-
-//     crypto.encryptCtx = EVP_CIPHER_CTX_new();
-//     crypto.decryptCtx = EVP_CIPHER_CTX_new();
-
-//     if (!crypto.encryptCtx || !crypto.decryptCtx) {
-//         std::cerr << "[CRYPTO] Failed to create EVP_CIPHER_CTX for client " << clientId << "\n";
-//         if (crypto.encryptCtx) EVP_CIPHER_CTX_free(crypto.encryptCtx);
-//         if (crypto.decryptCtx) EVP_CIPHER_CTX_free(crypto.decryptCtx);
-        
-//         cryptoMap.erase(clientId);
-//         return false;
-//     }
-        
-//     std::cout << "[CRYPTO] UDP encryption ready for client " << clientId << "\n";
-//     return true;
-// }
-
 bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
     
@@ -467,12 +370,6 @@ bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key
     ClientCrypto& crypto = cryptoMap[clientId]; 
 
     crypto.udpSharedKey = key;
-    
-    // Debug log để kiểm tra
-    // uint8_t firstByte = key[0];
-    // uint8_t lastByte = key[31];
-    // std::cout << "[DEBUG] Client " << clientId << " Key Check: " 
-    //           << std::hex << (int)firstByte << "..." << (int)lastByte << std::dec << "\n";
 
     crypto.ready = true;
     crypto.txCounter = 0;
