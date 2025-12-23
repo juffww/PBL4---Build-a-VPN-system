@@ -8,6 +8,10 @@
 #include <mutex>
 #include <chrono>
 #include "tls_wrapper.h"
+#include <openssl/evp.h>
+
+class PacketHandler;
+
 #ifdef _WIN32
     #include <winsock2.h>
     typedef SOCKET SOCKET;
@@ -18,8 +22,6 @@
     #define INVALID_SOCKET -1
     #define SOCKET_ERROR -1
 #endif
-
-class PacketHandler;
 
 struct ClientInfo {
     int id;
@@ -35,11 +37,54 @@ struct ClientInfo {
     long long bytesSent;
     long long bytesReceived;
     
+    // Mutex để bảo vệ client này
+    mutable std::mutex clientMutex; 
+    
     TLSWrapper* tlsWrapper;  
     
+    // 1. Constructor mặc định
     ClientInfo() : id(-1), socket(INVALID_SOCKET), port(0), 
                    authenticated(false), ipAssigned(false),
                    bytesSent(0), bytesReceived(0), tlsWrapper(nullptr) {}
+
+    // 2. QUAN TRỌNG: Copy Constructor (Để sửa lỗi biên dịch vector/map)
+    ClientInfo(const ClientInfo& other) {
+        id = other.id;
+        socket = other.socket;
+        realIP = other.realIP;
+        port = other.port;
+        connectTime = other.connectTime;
+        connectedAt = other.connectedAt;
+        authenticated = other.authenticated;
+        username = other.username;
+        ipAssigned = other.ipAssigned;
+        assignedVpnIP = other.assignedVpnIP;
+        bytesSent = other.bytesSent;
+        bytesReceived = other.bytesReceived;
+        tlsWrapper = other.tlsWrapper; 
+        // LƯU Ý: Không copy clientMutex, bản sao sẽ có mutex mới riêng biệt
+    }
+
+    // 3. QUAN TRỌNG: Assignment Operator (Để sửa lỗi clients[id] = info)
+    ClientInfo& operator=(const ClientInfo& other) {
+        if (this != &other) {
+            id = other.id;
+            socket = other.socket;
+            realIP = other.realIP;
+            port = other.port;
+            connectTime = other.connectTime;
+            connectedAt = other.connectedAt;
+            authenticated = other.authenticated;
+            username = other.username;
+            ipAssigned = other.ipAssigned;
+            assignedVpnIP = other.assignedVpnIP;
+            bytesSent = other.bytesSent;
+            bytesReceived = other.bytesReceived;
+            tlsWrapper = other.tlsWrapper;
+            // Không copy mutex
+        }
+        return *this;
+    }
 };
 
 class IPPool {
@@ -65,16 +110,26 @@ private:
     int nextClientId;
     IPPool* ipPool;
     PacketHandler* packetHandler;
+    std::vector<uint8_t> cryptoBuffer; 
+    std::vector<uint8_t> tagBuffer;    
     
     std::string getCurrentTime();
 
     struct ClientCrypto {
+        EVP_CIPHER_CTX* encryptCtx = nullptr; 
+        EVP_CIPHER_CTX* decryptCtx = nullptr;
+
         std::vector<uint8_t> udpSharedKey;  
         uint64_t txCounter;
-        uint64_t rxCounter;
-        bool ready;
         
-        ClientCrypto() : txCounter(0), rxCounter(0), ready(false) {}
+        uint64_t rxCounter;
+        uint64_t rxWindowBitmap;
+        bool ready;
+
+        std::mutex cryptoMutex;
+        
+        ClientCrypto() : encryptCtx(nullptr), decryptCtx(nullptr), ready(false), 
+                     txCounter(0), rxCounter(0), rxWindowBitmap(0) {}
     };
     std::map<int, ClientCrypto> cryptoMap;
     std::mutex cryptoMutex;
@@ -89,7 +144,8 @@ public:
     bool removeClient(int clientId);
     bool disconnectClient(int clientId);
     
-    bool authenticateClient(int clientId, const std::string& username, const std::string& password);
+    // bool authenticateClient(int clientId, const std::string& username, const std::string& password);
+    bool authenticateClient(int clientId);
     bool assignVPNIP(int clientId);
     void releaseVPNIP(int clientId);
     std::string getClientVPNIP(int clientId);

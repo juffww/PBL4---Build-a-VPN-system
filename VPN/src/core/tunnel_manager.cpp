@@ -45,6 +45,9 @@ bool TunnelManager::initialize(const std::string& serverIP, const std::string& s
         return false;
     }
     
+    tunInterface->executeCommand("ip link set dev " + interfaceName + " mtu 1350");
+    std::cout << "[TUNNEL] MTU set to 1350\n";
+
     setupVPNRouting(subnet);
     
     std::cout << "[TUNNEL] Ready: " << tunInterface->getName() 
@@ -75,8 +78,23 @@ void TunnelManager::setupNATRules(const std::string& subnet) {
     tunInterface->executeCommand("iptables -D FORWARD -d " + subnetWithMask + " -j ACCEPT 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -i " + interfaceName + " -j ACCEPT 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -o " + interfaceName + " -j ACCEPT 2>/dev/null || true");
+
+    tunInterface->executeCommand("iptables -t mangle -D FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true");
     
     tunInterface->executeCommand("iptables -t nat -A POSTROUTING -s " + subnetWithMask + " -o " + defaultInterface + " -j MASQUERADE");
+
+    tunInterface->executeCommand("iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu");
+
+    //Cho phép lưu lượng phản hồi (Stateful Inspection)
+    /*
+    Cho phép mọi gói tin có nguồn là IP VPN (10.8.0.x) đi qua
+
+    Cho phép mọi gói tin có đích là IP VPN (10.8.0.x) đi qua
+
+    Cho phép mọi gói tin đi vào từ card ảo (tun0)
+
+    Cho phép mọi gói tin đi ra card ảo (tun0)
+    */
     tunInterface->executeCommand("iptables -I FORWARD 1 -m state --state RELATED,ESTABLISHED -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -s " + subnetWithMask + " -j ACCEPT");
     tunInterface->executeCommand("iptables -A FORWARD -d " + subnetWithMask + " -j ACCEPT");
@@ -110,7 +128,7 @@ void TunnelManager::stop() {
 }
 
 void TunnelManager::processPackets() {
-    char buffer[4096]; 
+    char buffer[65536]; 
     int consecutiveErrors = 0;
     const int maxErrors = 10;
     
@@ -123,7 +141,7 @@ void TunnelManager::processPackets() {
                 processIPPacket(buffer, bytesRead);
             }
         } else if (bytesRead == 0 || (bytesRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            //std::this_thread::sleep_for(std::chrono::microseconds(100));
         } else {
             consecutiveErrors++;
             if (consecutiveErrors >= maxErrors) {
@@ -180,6 +198,8 @@ void TunnelManager::cleanupNATRules() {
     tunInterface->executeCommand("iptables -D FORWARD -d " + subnet + " -j ACCEPT 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -i " + interfaceName + " -j ACCEPT 2>/dev/null || true");
     tunInterface->executeCommand("iptables -D FORWARD -o " + interfaceName + " -j ACCEPT 2>/dev/null || true");
+
+    tunInterface->executeCommand("iptables -t mangle -D FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true");
 }
 
 TUNInterface* TunnelManager::getTUNInterface() const {

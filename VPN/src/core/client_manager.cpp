@@ -1,7 +1,7 @@
 #include "client_manager.h"
 #include "packet_handler.h"
-#include "crypto_engine.h"
 #include <iostream>
+#include <openssl/err.h>
 #include <sstream>
 #include <iomanip>
 #include <cstring>
@@ -68,6 +68,8 @@ std::vector<std::string> IPPool::getAllAssignedIPs() const {
 
 // Client Manager implementation
 ClientManager::ClientManager() : nextClientId(1), packetHandler(nullptr) {
+    cryptoBuffer.resize(65536);
+    tagBuffer.resize(16);
     ipPool = new IPPool("10.8.0", 2, 254);
 }
 
@@ -107,23 +109,18 @@ int ClientManager::addClient(SOCKET socket, const std::string& realIP, int port)
     return clientInfo.id;
 }
 
-bool ClientManager::authenticateClient(int clientId, const std::string& username, const std::string& password) {
+bool ClientManager::authenticateClient(int clientId) {
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = clients.find(clientId);
     if (it == clients.end()) return false;
     
-    //bool authenticated = !username.empty() && !password.empty();
-    bool authenticated = true;
-    if (authenticated) {
-        it->second.authenticated = true;
-        it->second.username = username;
-        std::cout << "[SECURITY] Client " << clientId << " (" << username << ") authenticated successfully\n";
-    } else {
-        std::cerr << "[SECURITY] Client " << clientId << " authentication failed (user: " << username << ")\n";
-    }
+    it->second.authenticated = true;
+    it->second.username = "anonymous"; 
     
-    return authenticated;
+    std::cout << "[SECURITY] Client " << clientId << " authenticated successfully (Anonymous)\n";
+    return true;
 }
+
 
 bool ClientManager::assignVPNIP(int clientId) {
     std::lock_guard<std::mutex> lock(clientsMutex);
@@ -203,19 +200,36 @@ void ClientManager::handleClientPacket(int clientId, const char* packet, int siz
 }
 
 bool ClientManager::removeClient(int clientId) {
+    // 1. Xóa Crypto trước
+    {
+        std::lock_guard<std::mutex> lock(cryptoMutex);
+        auto cryptoIt = cryptoMap.find(clientId);
+        if (cryptoIt != cryptoMap.end()) {
+            if (cryptoIt->second.encryptCtx) EVP_CIPHER_CTX_free(cryptoIt->second.encryptCtx);
+            if (cryptoIt->second.decryptCtx) EVP_CIPHER_CTX_free(cryptoIt->second.decryptCtx);
+            cryptoMap.erase(cryptoIt);
+        }
+    }
+
+    // 2. Xóa Client Info
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = clients.find(clientId);
     if (it != clients.end()) {
+        // Đóng socket nếu chưa đóng
         if (it->second.socket != INVALID_SOCKET) {
+            #ifdef _WIN32
+            closesocket(it->second.socket);
+            #else
             close(it->second.socket);
+            #endif
         }
         
         if (it->second.ipAssigned) {
             ipPool->releaseIP(it->second.assignedVpnIP);
         }
         
-        std::cout << "[CLIENT] Disconnected - ID: " << clientId << "\n";
-        clients.erase(it);
+        std::cout << "[CLIENT] Removed data for ID: " << clientId << "\n";
+        clients.erase(it); // Xóa khỏi map
         return true;
     }
     return false;
@@ -225,18 +239,20 @@ bool ClientManager::disconnectClient(int clientId) {
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = clients.find(clientId);
     if (it != clients.end()) {
+        // CHỈ ĐÓNG SOCKET, KHÔNG XÓA DATA
+        // Việc đóng socket sẽ khiến hàm recv() bên handleClient trả về lỗi
+        // và handleClient sẽ tự gọi removeClient.
         if (it->second.socket != INVALID_SOCKET) {
-            sendToClient(clientId, "DISCONNECT|Server requested disconnect\n");
+            #ifdef _WIN32
+            shutdown(it->second.socket, SD_BOTH);
+            closesocket(it->second.socket);
+            #else
+            shutdown(it->second.socket, SHUT_RDWR); // Ngắt cả đọc và ghi
             close(it->second.socket);
-            it->second.socket = INVALID_SOCKET;
+            #endif
+            it->second.socket = INVALID_SOCKET; 
         }
-        
-        if (it->second.ipAssigned) {
-            ipPool->releaseIP(it->second.assignedVpnIP);
-        }
-        
-        clients.erase(it);
-        std::cout << "[CLIENT] Kicked - ID: " << clientId << "\n";
+        std::cout << "[CLIENT] Kicked/Disconnected signal sent - ID: " << clientId << "\n";
         return true;
     }
     return false;
@@ -341,7 +357,6 @@ std::vector<std::string> ClientManager::getClientStats() {
     return stats;
 }
 
-
 bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key) {
     std::lock_guard<std::mutex> lock(cryptoMutex);
     
@@ -349,60 +364,172 @@ bool ClientManager::setupUDPCrypto(int clientId, const std::vector<uint8_t>& key
         std::cerr << "[SECURITY] Invalid key size: " << key.size() << "\n";
         return false;
     }
-    
-    ClientCrypto crypto;
+
+    // Khi dòng này chạy, nếu clientId mới, struct ClientCrypto sẽ được tạo.
+    // Nhờ Bước 1, encryptCtx sẽ là nullptr.
+    ClientCrypto& crypto = cryptoMap[clientId]; 
+
     crypto.udpSharedKey = key;
+
     crypto.ready = true;
     crypto.txCounter = 0;
     crypto.rxCounter = 0;
-    cryptoMap[clientId] = crypto;
-    
+    crypto.rxWindowBitmap = 0;
+
+    // [FIX AN TOÀN] Chỉ free nếu pointer khác null và hợp lệ
+    if (crypto.encryptCtx) {
+        EVP_CIPHER_CTX_free(crypto.encryptCtx);
+        crypto.encryptCtx = nullptr; // Gán về null sau khi free
+    }
+    if (crypto.decryptCtx) {
+        EVP_CIPHER_CTX_free(crypto.decryptCtx);
+        crypto.decryptCtx = nullptr;
+    }
+
+    crypto.encryptCtx = EVP_CIPHER_CTX_new();
+    crypto.decryptCtx = EVP_CIPHER_CTX_new();
+
+    if (!crypto.encryptCtx || !crypto.decryptCtx) {
+        std::cerr << "[CRYPTO] Failed to create EVP_CIPHER_CTX for client " << clientId << "\n";
+        return false;
+    }
+        
     std::cout << "[CRYPTO] UDP encryption ready for client " << clientId << "\n";
     return true;
 }
 
-// Update encryptPacket() to use udpSharedKey:
 bool ClientManager::encryptPacket(int clientId, const char* plain, int plainSize,
                                   std::vector<uint8_t>& encrypted) {
-    std::lock_guard<std::mutex> lock(cryptoMutex);
+    // std::lock_guard<std::mutex> mapLock(clientsMutex);
+    std::lock_guard<std::mutex> mapLock(cryptoMutex); 
     auto it = cryptoMap.find(clientId);
-    if (it == cryptoMap.end() || !it->second.ready) return false;
+    if (it == cryptoMap.end() || !it->second.ready || !it->second.encryptCtx) return false;
     
-    std::vector<uint8_t> iv(12);
-    uint64_t counter = it->second.txCounter++;
-    memcpy(iv.data(), &counter, 8);
-    
-    std::vector<uint8_t> plainVec(plain, plain + plainSize);
-    std::vector<uint8_t> ciphertext, tag;
-    
-    if (!CryptoEngine::Encrypt(it->second.udpSharedKey, iv, plainVec, ciphertext, tag)) {
-        return false;
+    ClientCrypto& crypto = it->second;
+    std::lock_guard<std::mutex> clientLock(crypto.cryptoMutex);
+
+    uint8_t iv[12]; 
+    uint64_t counter = crypto.txCounter++;
+    memcpy(iv, &counter, 8);
+    memset(iv + 8, 0, 4);
+
+    EVP_CIPHER_CTX* ctx = crypto.encryptCtx;
+    const std::vector<uint8_t>& key = crypto.udpSharedKey;
+
+    int max_size = 28 + plainSize + 16;
+    if (encrypted.capacity() < max_size) {
+        encrypted.reserve(max_size);
     }
+    encrypted.resize(max_size);
+
+    uint8_t* iv_ptr = encrypted.data();
+    uint8_t* tag_ptr = encrypted.data() + 12;
+    uint8_t* ciphertext_ptr = encrypted.data() + 28;
+
+    int len = 0, ciphertext_len = 0;
+
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) return false;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1) return false;
+    if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, key.data(), iv) != 1) return false;
     
-    // Format: [IV:12][Tag:16][Ciphertext:N]
-    encrypted.resize(28 + ciphertext.size());
-    memcpy(encrypted.data(), iv.data(), 12);
-    memcpy(encrypted.data() + 12, tag.data(), 16);
-    memcpy(encrypted.data() + 28, ciphertext.data(), ciphertext.size());
+    if (EVP_EncryptUpdate(ctx, ciphertext_ptr, &len, (const uint8_t*)plain, plainSize) != 1) return false;
+    ciphertext_len = len;
+    
+    if (EVP_EncryptFinal_ex(ctx, ciphertext_ptr + len, &len) != 1) return false;
+    ciphertext_len += len;
+    
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag_ptr) != 1) return false;
+
+    memcpy(iv_ptr, iv, 12);
+
+    encrypted.resize(28 + ciphertext_len);
     
     return true;
 }
 
-// Update decryptPacket() similarly:
 bool ClientManager::decryptPacket(int clientId, const char* encrypted, int encSize,
                                   std::vector<uint8_t>& plain) {
-    std::lock_guard<std::mutex> lock(cryptoMutex);
+    if (encSize < 28) return false;
+
+    // std::lock_guard<std::mutex> mapLock(clientsMutex); 
+    std::lock_guard<std::mutex> mapLock(cryptoMutex);
     auto it = cryptoMap.find(clientId);
-    if (it == cryptoMap.end() || !it->second.ready || encSize < 28) return false;
+    if (it == cryptoMap.end() || !it->second.ready || !it->second.decryptCtx) return false;
+
+    ClientCrypto& crypto = it->second;
+    std::lock_guard<std::mutex> clientLock(crypto.cryptoMutex);
+
+    const uint8_t* iv_ptr = (const uint8_t*)encrypted;
+    const uint8_t* tag_ptr = (const uint8_t*)encrypted + 12;
+    const uint8_t* ciphertext_ptr = (const uint8_t*)encrypted + 28;
+    int ciphertext_len = encSize - 28;
+
+    uint64_t nonce = 0;
+    memcpy(&nonce, iv_ptr, 8);
+
+    if (nonce > crypto.rxCounter) {
+        uint64_t diff = nonce - crypto.rxCounter;
+        if (diff < 64) crypto.rxWindowBitmap <<= diff;
+        else crypto.rxWindowBitmap = 0;
+        crypto.rxWindowBitmap |= 1;
+        crypto.rxCounter = nonce;
+    } else {
+        uint64_t diff = crypto.rxCounter - nonce;
+        if (diff >= 64) return false; 
+        uint64_t bit = 1ULL << diff;
+        if ((crypto.rxWindowBitmap & bit) != 0) return false; 
+        crypto.rxWindowBitmap |= bit;
+    }
+
+    if (plain.capacity() < ciphertext_len + 16) {
+        plain.reserve(ciphertext_len + 16);
+    }
+    plain.resize(ciphertext_len + 16);
+
+    EVP_CIPHER_CTX* ctx = crypto.decryptCtx;
+    const std::vector<uint8_t>& key = crypto.udpSharedKey;
     
-    std::vector<uint8_t> iv(encrypted, encrypted + 12);
-    std::vector<uint8_t> tag(encrypted + 12, encrypted + 28);
-    std::vector<uint8_t> ciphertext(encrypted + 28, encrypted + encSize);
-    
-    if (!CryptoEngine::Decrypt(it->second.udpSharedKey, iv, ciphertext, tag, plain)) {
+    int len = 0, plaintext_len = 0;
+
+    EVP_CIPHER_CTX_reset(ctx);
+
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+        std::cerr << "[CRYPTO] Reset cipher failed\n";
         return false;
     }
     
-    return true;
-}
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1) {
+        std::cerr << "[CRYPTO] Set IV length failed\n";
+        return false;
+    }
+    
+    if (EVP_DecryptInit_ex(ctx, nullptr, nullptr, key.data(), iv_ptr) != 1) {
+        std::cerr << "[CRYPTO] Set key/IV failed\n";
+        return false;
+    }
+    
+    if (EVP_DecryptUpdate(ctx, plain.data(), &len, ciphertext_ptr, ciphertext_len) != 1) {
+        std::cerr << "[CRYPTO] Decrypt Update failed\n";
+        return false;
+    }
+    plaintext_len = len;
+    
+    // Set Tag
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, (void*)tag_ptr) != 1) {
+        std::cerr << "[CRYPTO] Set TAG failed\n";
+        return false;
+    }
 
+    int ret = EVP_DecryptFinal_ex(ctx, plain.data() + len, &len);
+
+    if (ret > 0) {
+        plaintext_len += len;
+        plain.resize(plaintext_len);
+        return true;
+    }
+    
+    std::cerr << "[CRYPTO] Decrypt Final failed (Bad Tag or Tampered)\n";
+    ERR_print_errors_fp(stderr);
+    
+    return false;
+}

@@ -7,7 +7,6 @@ mkdir -p "$CERT_DIR"
 
 echo "[*] Generating VPN Server TLS Certificate..."
 
-# Generate private key (2048-bit RSA)
 openssl genrsa -out "$CERT_DIR/server.key" 2048
 
 openssl req -new -x509 -key "$CERT_DIR/server.key" \

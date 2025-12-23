@@ -71,7 +71,8 @@ private:
     bool processClientMessage(int clientId, const std::string& message);
     
     // Command handlers
-    bool handleAuthCommand(int clientId, std::istringstream& iss);
+    // bool handleAuthCommand(int clientId, std::istringstream& iss);
+    bool handleAuthCommand(int clientId);
     bool handlePingCommand(int clientId);
     bool handleStatusCommand(int clientId);
     
@@ -111,6 +112,8 @@ public:
 
     //TLS
     void sendTLS(int clientId, const std::string& message);
+
+    void cleanupFinishedThreads();
 };
 
 #endif

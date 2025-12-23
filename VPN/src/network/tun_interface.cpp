@@ -85,7 +85,6 @@ bool TUNInterface::configure(const std::string& ip, const std::string& mask, con
         return false;
     }
     
-    // OPTIMIZATION: Set TXQueueLen to improve throughput
     std::string txqCmd = "ip link set dev " + interfaceName + " txqueuelen 1000";
     executeCommand(txqCmd);
     
