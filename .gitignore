@@ -10,3 +10,4 @@ venv/
 # Workspace settings
 *.code-workspace
 
+VPN/vpn_server
