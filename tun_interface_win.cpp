@@ -105,7 +105,6 @@ bool TUNInterface::create() {
     return true;
 }
 
-// Hàm lấy Index Adapter CHUẨN XÁC bằng API (Không dùng netsh)
 std::string TUNInterface::getInterfaceIndex(const std::string& adapterName) {
     ULONG outBufLen = 15000;
     PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)malloc(outBufLen);
@@ -211,7 +210,6 @@ bool TUNInterface::configureClientMode() {
     std::string dnsVPN = "netsh interface ip set dns name=\"" + interfaceName + "\" source=static addr=8.8.8.8 validate=no";
     executeCommand(dnsVPN);
 
-    // Disable DNS trên physical interfaces
     std::string disableDNS = "powershell -Command \"Get-NetAdapter | "
                              "Where-Object {$_.Name -ne '" + interfaceName + "'} | "
                                                "Set-DnsClientServerAddress -ServerAddresses @()\"";

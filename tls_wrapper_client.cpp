@@ -283,11 +283,10 @@ int TLSWrapper::recv(char* buffer, int len) {
 
 void TLSWrapper::cleanup() {
     if (ssl) {
-        // KHÔNG gọi SSL_shutdown(ssl) theo cách mặc định vì nó sẽ block UI
-        // Nếu muốn gọi, phải set mode quiet để không chờ đợi
+
         SSL_set_shutdown(ssl, SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN);
 
-        SSL_free(ssl); // Chỉ giải phóng bộ nhớ, không gửi/nhận gì cả -> Rất nhanh
+        SSL_free(ssl);
         ssl = nullptr;
     }
     if (ctx) {

@@ -183,10 +183,8 @@ void VPNClient::onConnected()
                     }
                 }
 
-                // Check for UDP_KEY (CRITICAL: Must be 41 bytes: "UDP_KEY|" + 32 bytes + "\n")
                 int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
                 if (udpKeyPos != -1 && messageBuffer.size() >= (udpKeyPos + 41)) {
-                    // Extract exactly 41 bytes: "UDP_KEY|" (8) + key (32) + "\n" (1)
                     QByteArray keyLine = messageBuffer.mid(udpKeyPos, 41);
 
                     qDebug() << "[CRYPTO] Found UDP_KEY at position" << udpKeyPos
@@ -203,7 +201,6 @@ void VPNClient::onConnected()
 
                         qDebug() << "[CRYPTO] ✓ UDP encryption ready";
 
-                        // Remove processed data
                         messageBuffer.remove(udpKeyPos, 41);
                         keyReceived = true;
                     }
@@ -487,7 +484,6 @@ void VPNClient::onReadyRead() {
             totalRead += bytesRead;
             messageBuffer.append(QByteArray(buffer, bytesRead));
 
-            // --- BẮT ĐẦU PHẦN SỬA ĐỔI ---
             // Xử lý UDP_KEY dạng Raw Binary (Cố định 32 bytes)
             // Định dạng: "UDP_KEY|" (8 bytes) + 32 bytes KEY + "\n" (1 byte) = Tổng 41 bytes
             int udpKeyPos = messageBuffer.indexOf("UDP_KEY|");
@@ -579,7 +575,6 @@ void VPNClient::setupUDPConnection()
         return;
     }
 
-    // **THÊM: SET NATIVE SOCKET OPTIONS**
     int sendBufSize = 2 * 1024 * 1024;
     int recvBufSize = 2 * 1024 * 1024;
 

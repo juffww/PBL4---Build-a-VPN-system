@@ -108,7 +108,6 @@ private:
 
     QLabel *totalDownloadLabel;
     QLabel *totalUploadLabel;
-    // Hàm tiện ích để format số (Ví dụ: 1024 -> "1 KB")
     QString formatBytes(quint64 bytes);
 };
 

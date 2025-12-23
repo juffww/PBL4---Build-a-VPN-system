@@ -177,9 +177,8 @@ QString MainWindow::formatBytes(quint64 bytes)
     if (bytes < 1024 * 1024)
         return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1); // 1 số lẻ
     if (bytes < 1024 * 1024 * 1024)
-        return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 2); // 2 số lẻ
+        return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 2);
 
-    // Nếu lớn hơn 1GB
     return QString("%1 GB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
 }
 
@@ -594,7 +593,7 @@ void MainWindow::setupUI()
 
     settingsLayout->addWidget(new QLabel("Giao thức:"), 1, 0);
     protocolCombo = new QComboBox();
-    protocolCombo->addItems({"VPN Protocol", "OpenVPN", "WireGuard"});
+    //protocolCombo->addItems({"VPN Protocol", "OpenVPN", "WireGuard"});
     protocolCombo->setCurrentIndex(0);
     settingsLayout->addWidget(protocolCombo, 1, 1);
 
