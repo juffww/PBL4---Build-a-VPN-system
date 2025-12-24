@@ -17,7 +17,7 @@ CXX           = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefau
 DEFINES       = -DQT_DEPRECATED_WARNINGS -DQT_QML_DEBUG -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_CORE_LIB
 CFLAGS        = -pipe -g $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk -mmacosx-version-min=12 -Wall -Wextra $(DEFINES)
 CXXFLAGS      = -pipe -stdlib=libc++ -g -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk -mmacosx-version-min=12 -Wall -Wextra $(DEFINES)
-INCPATH       = -I../../../client -I. -I../../../Qt/6.9.2/macos/lib/QtWidgets.framework/Headers -I../../../Qt/6.9.2/macos/lib/QtGui.framework/Headers -I../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers -I../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers -I. -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I../../../Qt/6.9.2/macos/mkspecs/macx-clang -F/Users/vohoangminh/Qt/6.9.2/macos/lib
+INCPATH       = -I../../../client -I. -I/opt/homebrew/opt/openssl@3/include -I../../../Qt/6.9.2/macos/lib/QtWidgets.framework/Headers -I../../../Qt/6.9.2/macos/lib/QtGui.framework/Headers -I../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers -I../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers -I. -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I../../../Qt/6.9.2/macos/mkspecs/macx-clang -F/Users/vohoangminh/Qt/6.9.2/macos/lib
 QMAKE         = /Users/vohoangminh/Qt/6.9.2/macos/bin/qmake
 DEL_FILE      = rm -f
 CHK_DIR_EXISTS= test -d
@@ -40,7 +40,7 @@ DISTNAME      = VPNClient1.0.0
 DISTDIR = /Users/vohoangminh/client/build/Qt_6_9_2_for_macOS-Debug/.tmp/VPNClient1.0.0
 LINK          = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 LFLAGS        = -stdlib=libc++ -headerpad_max_install_names $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk -mmacosx-version-min=12 -Wl,-rpath,@executable_path/../Frameworks -Wl,-rpath,/Users/vohoangminh/Qt/6.9.2/macos/lib
-LIBS          = $(SUBLIBS) -F/Users/vohoangminh/Qt/6.9.2/macos/lib -framework QtWidgets -framework QtGui -framework AppKit -framework ImageIO -framework Metal -framework QtNetwork -framework QtCore -framework IOKit -framework DiskArbitration -framework UniformTypeIdentifiers -framework OpenGL   
+LIBS          = $(SUBLIBS) -F/Users/vohoangminh/Qt/6.9.2/macos/lib -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto -framework QtWidgets -framework QtGui -framework AppKit -framework ImageIO -framework Metal -framework QtNetwork -framework QtCore -framework IOKit -framework DiskArbitration -framework UniformTypeIdentifiers -framework OpenGL   
 AR            = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar cq
 RANLIB        = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib -s
 SED           = sed
@@ -52,12 +52,14 @@ OBJECTS_DIR   = ./
 
 ####### Files
 
-SOURCES       = ../../main.cpp \
+SOURCES       = ../../crypto_client.cpp \
+		../../main.cpp \
 		../../mainwindow.cpp \
 		../../vpn_client.cpp \
 		../../tun_interface_mac.cpp moc_mainwindow.cpp \
 		moc_vpn_client.cpp
-OBJECTS       = main.o \
+OBJECTS       = crypto_client.o \
+		main.o \
 		mainwindow.o \
 		vpn_client.o \
 		tun_interface_mac.o \
@@ -312,9 +314,11 @@ DIST          = ../../mac_config.ini \
 		/Qt/6.9.2/macos/mkspecs/features/exceptions.prf \
 		/Qt/6.9.2/macos/mkspecs/features/yacc.prf \
 		/Qt/6.9.2/macos/mkspecs/features/lex.prf \
-		../../../../pbl4.pro ../../mainwindow.h \
+		../../../../pbl4.pro ../../crypto_client.h \
+		../../mainwindow.h \
 		../../vpn_client.h \
-		../../tun_interface.h ../../main.cpp \
+		../../tun_interface.h ../../crypto_client.cpp \
+		../../main.cpp \
 		../../mainwindow.cpp \
 		../../vpn_client.cpp \
 		../../tun_interface_mac.cpp
@@ -873,8 +877,8 @@ dist: distdir FORCE
 distdir: FORCE
 	@test -d $(DISTDIR) || mkdir -p $(DISTDIR)
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
-	$(COPY_FILE) --parents ../../mainwindow.h ../../vpn_client.h ../../tun_interface.h $(DISTDIR)/
-	$(COPY_FILE) --parents ../../main.cpp ../../mainwindow.cpp ../../vpn_client.cpp ../../tun_interface_mac.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents ../../crypto_client.h ../../mainwindow.h ../../vpn_client.h ../../tun_interface.h $(DISTDIR)/
+	$(COPY_FILE) --parents ../../crypto_client.cpp ../../main.cpp ../../mainwindow.cpp ../../vpn_client.cpp ../../tun_interface_mac.cpp $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -936,7 +940,7 @@ moc_mainwindow.cpp: ../../mainwindow.h \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/QNetworkReply \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qnetworkreply.h \
 		../../../Qt/6.9.2/macos/libexec/moc
-	/Users/vohoangminh/Qt/6.9.2/macos/libexec/moc $(DEFINES) -D__APPLE__ -D__GNUC__=4 -D__APPLE_CC__ -D__cplusplus=199711L -D__APPLE_CC__=6000 -D__clang__ -D__clang_major__=16 -D__clang_minor__=0 -D__clang_patchlevel__=0 -D__GNUC__=4 -D__GNUC_MINOR__=2 -D__GNUC_PATCHLEVEL__=1 -I/Users/vohoangminh/Qt/6.9.2/macos/mkspecs/macx-clang -I/Users/vohoangminh/client -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtWidgets.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtGui.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtNetwork.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtCore.framework/Headers -I. -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include/c++/v1 -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/16/include -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -F/Users/vohoangminh/Qt/6.9.2/macos/lib ../../mainwindow.h -o moc_mainwindow.cpp
+	/Users/vohoangminh/Qt/6.9.2/macos/libexec/moc $(DEFINES) -D__APPLE__ -D__GNUC__=4 -D__APPLE_CC__ -D__cplusplus=199711L -D__APPLE_CC__=6000 -D__clang__ -D__clang_major__=16 -D__clang_minor__=0 -D__clang_patchlevel__=0 -D__GNUC__=4 -D__GNUC_MINOR__=2 -D__GNUC_PATCHLEVEL__=1 -I/Users/vohoangminh/Qt/6.9.2/macos/mkspecs/macx-clang -I/Users/vohoangminh/client -I/opt/homebrew/opt/openssl@3/include -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtWidgets.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtGui.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtNetwork.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtCore.framework/Headers -I. -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include/c++/v1 -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/16/include -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -F/Users/vohoangminh/Qt/6.9.2/macos/lib ../../mainwindow.h -o moc_mainwindow.cpp
 
 moc_vpn_client.cpp: ../../vpn_client.h \
 		../../../Qt/6.9.2/macos/lib/QtCore.framework/Headers/QObject \
@@ -953,7 +957,7 @@ moc_vpn_client.cpp: ../../vpn_client.h \
 		../../../Qt/6.9.2/macos/lib/QtNetwork.framework/Headers/qnetworkaccessmanager.h \
 		../../tun_interface.h \
 		../../../Qt/6.9.2/macos/libexec/moc
-	/Users/vohoangminh/Qt/6.9.2/macos/libexec/moc $(DEFINES) -D__APPLE__ -D__GNUC__=4 -D__APPLE_CC__ -D__cplusplus=199711L -D__APPLE_CC__=6000 -D__clang__ -D__clang_major__=16 -D__clang_minor__=0 -D__clang_patchlevel__=0 -D__GNUC__=4 -D__GNUC_MINOR__=2 -D__GNUC_PATCHLEVEL__=1 -I/Users/vohoangminh/Qt/6.9.2/macos/mkspecs/macx-clang -I/Users/vohoangminh/client -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtWidgets.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtGui.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtNetwork.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtCore.framework/Headers -I. -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include/c++/v1 -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/16/include -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -F/Users/vohoangminh/Qt/6.9.2/macos/lib ../../vpn_client.h -o moc_vpn_client.cpp
+	/Users/vohoangminh/Qt/6.9.2/macos/libexec/moc $(DEFINES) -D__APPLE__ -D__GNUC__=4 -D__APPLE_CC__ -D__cplusplus=199711L -D__APPLE_CC__=6000 -D__clang__ -D__clang_major__=16 -D__clang_minor__=0 -D__clang_patchlevel__=0 -D__GNUC__=4 -D__GNUC_MINOR__=2 -D__GNUC_PATCHLEVEL__=1 -I/Users/vohoangminh/Qt/6.9.2/macos/mkspecs/macx-clang -I/Users/vohoangminh/client -I/opt/homebrew/opt/openssl@3/include -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtWidgets.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtGui.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtNetwork.framework/Headers -I/Users/vohoangminh/Qt/6.9.2/macos/lib/QtCore.framework/Headers -I. -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include/c++/v1 -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/16/include -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/usr/include -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -F/Users/vohoangminh/Qt/6.9.2/macos/lib ../../vpn_client.h -o moc_vpn_client.cpp
 
 compiler_moc_objc_header_make_all:
 compiler_moc_objc_header_clean:
@@ -972,6 +976,65 @@ compiler_lex_clean:
 compiler_clean: compiler_moc_header_clean 
 
 ####### Compile
+
+crypto_client.o: ../../crypto_client.cpp ../../crypto_client.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/evp.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/macros.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/opensslconf.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/configuration.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/opensslv.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/types.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/e_os2.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/safestack.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/stack.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/core.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/core_dispatch.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/indicator.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/params.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/bn.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/crypto.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/cryptoerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/symhacks.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/cryptoerr_legacy.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/ebcdic.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/bnerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/bio.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/bioerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/evperr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/objects.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/obj_mac.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/asn1.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/asn1err.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/objectserr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/rand.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/randerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/kdf.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/pem.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/x509.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/buffer.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/buffererr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/ec.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/ecerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/rsa.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/rsaerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/dsa.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/dh.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/dherr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/dsaerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/sha.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/x509err.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/x509_vfy.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/lhash.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/pkcs7.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/pkcs7err.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/http.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/conf.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/conferr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/conftypes.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/pemerr.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/err.h \
+		/opt/homebrew/opt/openssl@3/include/openssl/core_names.h
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o crypto_client.o ../../crypto_client.cpp
 
 main.o: ../../main.cpp ../../../Qt/6.9.2/macos/lib/QtWidgets.framework/Headers/QApplication \
 		../../../Qt/6.9.2/macos/lib/QtWidgets.framework/Headers/qapplication.h \

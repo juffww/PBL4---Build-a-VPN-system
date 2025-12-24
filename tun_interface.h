@@ -52,6 +52,7 @@ public:
     bool isOpened() const { return isOpen.load(); }
     uint64_t getBytesReceived() const { return bytesReceived; }
     uint64_t getBytesSent() const { return bytesSent; }
+    void setIPv6Status(bool enable);
 };
 
 #endif

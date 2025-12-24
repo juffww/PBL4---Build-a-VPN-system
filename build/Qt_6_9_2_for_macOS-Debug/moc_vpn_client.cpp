@@ -68,7 +68,6 @@ template <> constexpr inline auto VPNClient::qt_create_metaobjectdata<qt_meta_ta
         "onError",
         "QAbstractSocket::SocketError",
         "socketError",
-        "sendPing",
         "processTUNTraffic"
     };
 
@@ -123,10 +122,8 @@ template <> constexpr inline auto VPNClient::qt_create_metaobjectdata<qt_meta_ta
         QtMocHelpers::SlotData<void(QAbstractSocket::SocketError)>(26, 2, QMC::AccessPrivate, QMetaType::Void, {{
             { 0x80000000 | 27, 28 },
         }}),
-        // Slot 'sendPing'
-        QtMocHelpers::SlotData<void()>(29, 2, QMC::AccessPrivate, QMetaType::Void),
         // Slot 'processTUNTraffic'
-        QtMocHelpers::SlotData<void()>(30, 2, QMC::AccessPrivate, QMetaType::Void),
+        QtMocHelpers::SlotData<void()>(29, 2, QMC::AccessPrivate, QMetaType::Void),
     };
     QtMocHelpers::UintData qt_properties {
     };
@@ -168,8 +165,7 @@ void VPNClient::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, v
         case 15: _t->sendUdpHandshake(); break;
         case 16: _t->startUdpHandshake(); break;
         case 17: _t->onError((*reinterpret_cast< std::add_pointer_t<QAbstractSocket::SocketError>>(_a[1]))); break;
-        case 18: _t->sendPing(); break;
-        case 19: _t->processTUNTraffic(); break;
+        case 18: _t->processTUNTraffic(); break;
         default: ;
         }
     }
@@ -224,14 +220,14 @@ int VPNClient::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 20)
+        if (_id < 19)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 20;
+        _id -= 19;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 20)
+        if (_id < 19)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 20;
+        _id -= 19;
     }
     return _id;
 }

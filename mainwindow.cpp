@@ -29,14 +29,20 @@
 #include <QJsonObject>
 #include <QHostAddress>
 #include <QRadioButton>
+#include <csignal>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), isConnected(false), isHideMessageShown(false),
-      networkManager(nullptr), currentReply(nullptr), vpnClient(nullptr),
-      systemTrayIcon(nullptr), statsTimer(nullptr), ipCheckTimer(nullptr),
-      connectionTimeStarted(false),
-      totalDownload(0), totalUpload(0), trafficRunning(false), trafficButton(nullptr), webTrafficTimer(nullptr)
+    networkManager(nullptr), currentReply(nullptr), vpnClient(nullptr),
+    systemTrayIcon(nullptr), statsTimer(nullptr), ipCheckTimer(nullptr),
+    connectionTimeStarted(false),
+    totalDownload(0), totalUpload(0), trafficRunning(false), trafficButton(nullptr), webTrafficTimer(nullptr)
 {
+    #ifndef _WIN32
+        // Bỏ qua tín hiệu SIGPIPE trên macOS/Linux để tránh crash khi ghi vào socket đã đóng
+        signal(SIGPIPE, SIG_IGN);
+    #endif
+        // 👆 KẾT THÚC ĐOẠN THÊM
     networkManager = new QNetworkAccessManager(this);
     vpnClient = new VPNClient(this);
     setupUI();
@@ -93,8 +99,8 @@ void MainWindow::setupVPNClientConnections()
 
             if (systemTrayIcon) {
                 systemTrayIcon->showMessage("VPN Client",
-                    QString("Kết nối VPN thành công!\nVPN IP: %1").arg(currentVpnIP),
-                    QSystemTrayIcon::Information, 3000);
+                                            QString("Kết nối VPN thành công!\nVPN IP: %1").arg(currentVpnIP),
+                                            QSystemTrayIcon::Information, 3000);
             }
 
             QTimer::singleShot(2000, this, &MainWindow::getPublicIP);
@@ -122,7 +128,7 @@ void MainWindow::setupVPNClientConnections()
         logTextEdit->append("[INFO] Đã ngắt kết nối khỏi server");
 
         updateRealIP();
-        getPublicIP();
+        // getPublicIP();
     });
 
     connect(vpnClient, &VPNClient::error, this, [this](const QString& errorMsg) {
@@ -162,6 +168,16 @@ void MainWindow::setupVPNClientConnections()
     connect(vpnClient, &VPNClient::statusReceived, this, [this](const QString& status) {
         logTextEdit->append(QString("[STATUS] %1").arg(status));
     });
+
+    connect(vpnClient, &VPNClient::statusReceived, this, [this](const QString& status) {
+        logTextEdit->append(QString("[STATUS] %1").arg(status));
+    });
+
+    // --- [THÊM MỚI] Connect Ping ---
+    connect(vpnClient, &VPNClient::pingUpdated, this, [this](int ms) {
+        currentLatency = ms;
+        latencyLabel->setText(QString("Ping: %1 ms").arg(ms));
+    });
 }
 
 void MainWindow::connectToVPN()
@@ -188,7 +204,7 @@ void MainWindow::connectToVPN()
     // 2. Đọc IP và Port từ file config
     QSettings settings("/Users/vohoangminh/client/mac_config.ini", QSettings::IniFormat);
     QString host = settings.value(serverKey).toString().trimmed();
-    int port = settings.value("servers/default_port", 1194).toInt();
+    int port = settings.value("servers/default_port", 5000).toInt();
 
     // ===== FIX: KIỂM TRA VÀ LOG =====
     logTextEdit->append(QString("[DEBUG] Config file: /Users/vohoangminh/client/mac_config.ini"));
@@ -227,20 +243,8 @@ void MainWindow::connectToVPN()
     // 3. Cập nhật UI
     serverEdit->setText(QString("%1:%2").arg(host).arg(port));
 
-    // 4. Lấy thông tin đăng nhập
-    QString username = usernameEdit->text().trimmed();
-    QString password = passwordEdit->text().trimmed();
-
-    if (username.isEmpty()) {
-        QMessageBox::warning(this, "Lỗi", "Vui lòng nhập tên đăng nhập");
-        usernameEdit->setFocus();
-        return;
-    }
-    if (password.isEmpty()) {
-        QMessageBox::warning(this, "Lỗi", "Vui lòng nhập mật khẩu");
-        passwordEdit->setFocus();
-        return;
-    }
+    // 4. Lấy thông tin đăng nhập (Đã loại bỏ UI, sử dụng default hoặc rỗng)
+    // Nếu server yêu cầu auth cụ thể, bạn có thể hardcode ở đây.
 
     // 5. Bắt đầu kết nối
     connectButton->setEnabled(false);
@@ -249,7 +253,7 @@ void MainWindow::connectToVPN()
 
     logTextEdit->append("[INFO] Bắt đầu kết nối VPN...");
     logTextEdit->append(QString("[INFO] => Connecting to: %1:%2").arg(host).arg(port));
-    logTextEdit->append(QString("[INFO] => Username: %1").arg(username));
+    // logTextEdit->append(QString("[INFO] => Username: %1").arg(username)); // Ẩn log user
 
     // ===== FIX: THÊM TIMEOUT HANDLER =====
     QTimer::singleShot(10000, this, [this, host, port]() {
@@ -268,7 +272,7 @@ void MainWindow::connectToVPN()
         }
     });
 
-    vpnClient->connectToServer(host, port, username, password);
+    vpnClient->connectToServer(host, port);
 }
 
 
@@ -327,10 +331,10 @@ void MainWindow::clearLog()
 void MainWindow::showAbout()
 {
     QMessageBox::about(this, "Về VPN Client",
-        "VPN Client v1.0\n\n"
-        "Ứng dụng VPN Client đơn giản được xây dựng với Qt.\n"
-        "Kết nối tới máy chủ VPN với cấp phát IP động.\n\n"
-        "© 2025 VPN Client");
+                       "VPN Client v1.0\n\n"
+                       "Ứng dụng VPN Client đơn giản được xây dựng với Qt.\n"
+                       "Kết nối tới máy chủ VPN với cấp phát IP động.\n\n"
+                       "© 2025 VPN Client");
 }
 
 void MainWindow::toggleWindow()
@@ -347,35 +351,63 @@ void MainWindow::toggleWindow()
 void MainWindow::updateStats()
 {
     if (isConnected) {
-        static quint64 totalDownload = 0;
-        static quint64 totalUpload = 0;
-                totalDownload += (rand() % 1000 + 100);
-                totalUpload += (rand() % 500 + 50);
+        // 1. Gửi Ping để lấy độ trễ
+        vpnClient->sendPing();
 
-                downloadLabel->setText(QString("↓ %1 KB").arg(totalDownload));
-                uploadLabel->setText(QString("↑ %1 KB").arg(totalUpload));
+        // 2. Lấy tổng số liệu từ Client
+        quint64 currentTotalRx = vpnClient->getBytesReceived();
+        quint64 currentTotalTx = vpnClient->getBytesSent();
 
+        // 3. Tính tốc độ (Bytes hiện tại - Bytes lần trước)
+        // Vì timer chạy mỗi 1 giây nên hiệu số chính là bytes/giây
+        quint64 downloadSpeed = currentTotalRx - lastTotalDownload;
+        quint64 uploadSpeed = currentTotalTx - lastTotalUpload;
+
+        // Lưu lại cho lần sau
+        lastTotalDownload = currentTotalRx;
+        lastTotalUpload = currentTotalTx;
+
+        // 4. Cập nhật UI
+        downloadLabel->setText(QString("↓ %1/s").arg(formatBytes(downloadSpeed)));
+        uploadLabel->setText(QString("↑ %1/s").arg(formatBytes(uploadSpeed)));
+
+        totalDownloadLabel->setText(QString(" %1").arg(formatBytes(currentTotalRx)));
+        totalUploadLabel->setText(QString(" %1").arg(formatBytes(currentTotalTx)));
+
+        // 5. Cập nhật Packet Loss
+        double loss = vpnClient->getPacketLoss();
+        packetLossLabel->setText(QString("Loss: %1 %").arg(loss, 0, 'f', 1));
+
+        // 6. Cập nhật thời gian
         if (connectionTimeStarted) {
             int totalSeconds = connectionStartTime.secsTo(QTime::currentTime());
-            if (totalSeconds < 0) {
-                totalSeconds += 24 * 3600;
-            }
+            if (totalSeconds < 0) totalSeconds += 24 * 3600;
 
             int hours = totalSeconds / 3600;
             int minutes = (totalSeconds % 3600) / 60;
             int seconds = totalSeconds % 60;
 
             connectionTimeLabel->setText(QString("Thời gian: %1:%2:%3")
-                .arg(hours, 2, 10, QChar('0'))
-                .arg(minutes, 2, 10, QChar('0'))
-                .arg(seconds, 2, 10, QChar('0')));
+                                             .arg(hours, 2, 10, QChar('0'))
+                                             .arg(minutes, 2, 10, QChar('0'))
+                                             .arg(seconds, 2, 10, QChar('0')));
         }
     } else {
-        totalDownload = 0;
-        totalUpload = 0;
+        // Reset khi ngắt kết nối
+        lastTotalDownload = 0;
+        lastTotalUpload = 0;
+        currentLatency = -1;
 
-        downloadLabel->setText("↓ 0 KB");
-        uploadLabel->setText("↑ 0 KB");
+        latencyLabel->setText("Ping: - ms");
+        packetLossLabel->setText("Loss: - %");
+        packetLossLabel->setStyleSheet("color: black;");
+
+        downloadLabel->setText("↓ 0 B/s");
+        uploadLabel->setText("↑ 0 B/s");
+
+        totalDownloadLabel->setText(" 0 B");
+        totalUploadLabel->setText(" 0 B");
+
         connectionTimeLabel->setText("Thời gian: 00:00:00");
         connectionTimeStarted = false;
     }
@@ -452,8 +484,8 @@ void MainWindow::onPublicIPReceived()
 void MainWindow::setupUI()
 {
     setWindowTitle("VPN Client - Enhanced");
-    setMinimumSize(600, 550);
-    resize(700, 600);
+    setMinimumSize(600, 450); // Giảm chiều cao tối thiểu do bớt UI
+    resize(700, 500);
 
     QWidget *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
@@ -482,7 +514,6 @@ void MainWindow::setupUI()
 
     mainLayout->addWidget(ipGroup);
 
-    // Connection status group
     QGroupBox *statusGroup = new QGroupBox("Trạng thái kết nối");
     QVBoxLayout *statusLayout = new QVBoxLayout(statusGroup);
 
@@ -491,16 +522,38 @@ void MainWindow::setupUI()
     statusLayout->addWidget(statusLabel);
 
     QHBoxLayout *statsLayout = new QHBoxLayout();
-    downloadLabel = new QLabel("↓ 0 KB");
-    uploadLabel = new QLabel("↑ 0 KB");
+    downloadLabel = new QLabel("↓ 0 KB/s");
+    uploadLabel = new QLabel("↑ 0 KB/s");
+
+    // --- [THÊM MỚI] Khởi tạo Label Tổng ---
+    totalDownloadLabel = new QLabel("Tổng DL: 0 B");
+    totalDownloadLabel->setStyleSheet("color: blue;");
+
+    totalUploadLabel = new QLabel("Tổng UL: 0 B");
+    totalUploadLabel->setStyleSheet("color: orange;");
+    // --------------------------------------
+
+    latencyLabel = new QLabel("Ping: - ms");
+    packetLossLabel = new QLabel("Loss: - %");
     connectionTimeLabel = new QLabel("Thời gian: 00:00:00");
 
+    // --- [CẬP NHẬT LAYOUT] Thêm Label vào layout ---
     statsLayout->addWidget(downloadLabel);
+    statsLayout->addWidget(totalDownloadLabel); // Thêm vào
+    statsLayout->addSpacing(15);
+
     statsLayout->addWidget(uploadLabel);
+    statsLayout->addWidget(totalUploadLabel);   // Thêm vào
+    statsLayout->addSpacing(15);
+
+    statsLayout->addWidget(latencyLabel);
+    statsLayout->addSpacing(15);
+    statsLayout->addWidget(packetLossLabel);
     statsLayout->addStretch();
     statsLayout->addWidget(connectionTimeLabel);
-    statusLayout->addLayout(statsLayout);
+    // -----------------------------------------------
 
+    statusLayout->addLayout(statsLayout);
     mainLayout->addWidget(statusGroup);
 
     // <<< THÊM MỚI: VÙNG CHUYỂN VÙNG >>>
@@ -533,22 +586,13 @@ void MainWindow::setupUI()
     serverEdit->setStyleSheet("QLineEdit { background-color: #f0f0f0; }");
     settingsLayout->addWidget(serverEdit, 0, 1);
 
-    settingsLayout->addWidget(new QLabel("Tên đăng nhập:"), 1, 0);
-    usernameEdit = new QLineEdit();
-    usernameEdit->setPlaceholderText("Nhập tên đăng nhập");
-    settingsLayout->addWidget(usernameEdit, 1, 1);
+    // ĐÃ XÓA: Tên đăng nhập và Mật khẩu widgets
 
-    settingsLayout->addWidget(new QLabel("Mật khẩu:"), 2, 0);
-    passwordEdit = new QLineEdit();
-    passwordEdit->setEchoMode(QLineEdit::Password);
-    passwordEdit->setPlaceholderText("Nhập mật khẩu");
-    settingsLayout->addWidget(passwordEdit, 2, 1);
-
-    settingsLayout->addWidget(new QLabel("Giao thức:"), 3, 0);
-    protocolCombo = new QComboBox();
-    protocolCombo->addItems({"VPN Protocol", "OpenVPN", "WireGuard"});
-    protocolCombo->setCurrentIndex(0);
-    settingsLayout->addWidget(protocolCombo, 3, 1);
+    // settingsLayout->addWidget(new QLabel("Giao thức:"), 1, 0); // Đẩy lên hàng 1
+    // protocolCombo = new QComboBox();
+    // protocolCombo->addItems({"VPN Protocol", "OpenVPN", "WireGuard"});
+    // protocolCombo->setCurrentIndex(0);
+    // settingsLayout->addWidget(protocolCombo, 1, 1);
 
     mainLayout->addWidget(settingsGroup);
 
@@ -559,7 +603,7 @@ void MainWindow::setupUI()
     connectButton->setStyleSheet(
         "QPushButton { font-weight: bold; padding: 10px 20px; font-size: 14px; }"
         "QPushButton:hover { background-color: #4CAF50; color: white; }"
-    );
+        );
     connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectToVPN);
     buttonLayout->addWidget(connectButton);
 
@@ -569,7 +613,7 @@ void MainWindow::setupUI()
     trafficButton->setStyleSheet(
         "QPushButton { font-weight: bold; padding: 10px 20px; font-size: 14px; }"
         "QPushButton:disabled { background-color: #cccccc; }"
-    );
+        );
     buttonLayout->addWidget(trafficButton);
 
     QPushButton *clearLogButton = new QPushButton("Xóa log");
@@ -585,16 +629,16 @@ void MainWindow::setupUI()
     mainLayout->addWidget(progressBar);
 
     QGroupBox *logGroup = new QGroupBox("Nhật ký kết nối");
-        QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
+    QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
 
-        logTextEdit = new QTextEdit();
-        logTextEdit->setMaximumHeight(120);
-        logTextEdit->setReadOnly(true);
-        logTextEdit->append("VPN Client Enhanced đã khởi động...");
-        logTextEdit->append("Server mặc định: 192.168.1.100:1194 với cấp phát IP động");
-        logLayout->addWidget(logTextEdit);
+    logTextEdit = new QTextEdit();
+    logTextEdit->setMaximumHeight(120);
+    logTextEdit->setReadOnly(true);
+    logTextEdit->append("VPN Client Enhanced đã khởi động...");
+    logTextEdit->append("Server mặc định: 192.168.1.100:1194 với cấp phát IP động");
+    logLayout->addWidget(logTextEdit);
 
-        mainLayout->addWidget(logGroup);
+    mainLayout->addWidget(logGroup);
 
     QMenuBar *menuBar = this->menuBar();
     QMenu *fileMenu = menuBar->addMenu("Tệp");
@@ -621,7 +665,7 @@ bool MainWindow::parseServerAddress(const QString& serverInput, QString& host, i
         return false;
     }
 
-    port = 1194;
+    port = 5000;
 
     if (parts.size() > 1) {
         bool ok;
@@ -691,7 +735,7 @@ void MainWindow::updateConnectionStatus()
         connectButton->setStyleSheet(
             "QPushButton { font-weight: bold; padding: 10px 20px; font-size: 14px; background-color: #f44336; color: white; }"
             "QPushButton:hover { background-color: #da190b; }"
-        );
+            );
 
         if (!currentVpnIP.isEmpty()) {
             vpnIPLabel->setText(QString("VPN IP: %1").arg(currentVpnIP));
@@ -709,7 +753,7 @@ void MainWindow::updateConnectionStatus()
         connectButton->setStyleSheet(
             "QPushButton { font-weight: bold; padding: 10px 20px; font-size: 14px; }"
             "QPushButton:hover { background-color: #4CAF50; color: white; }"
-        );
+            );
         vpnIPLabel->setText("VPN IP: Chưa kết nối");
 
         if (systemTrayIcon) {
@@ -721,16 +765,16 @@ void MainWindow::updateConnectionStatus()
 void MainWindow::loadSettings()
 {
     QSettings settings;
-    usernameEdit->setText(settings.value("username", "").toString());
-    protocolCombo->setCurrentText(settings.value("protocol", "VPN Protocol").toString());
+    // Đã xóa load username
+    // protocolCombo->setCurrentText(settings.value("protocol", "VPN Protocol").toString());
     restoreGeometry(settings.value("geometry").toByteArray());
 }
 
 void MainWindow::saveSettings()
 {
     QSettings settings;
-    settings.setValue("username", usernameEdit->text());
-    settings.setValue("protocol", protocolCombo->currentText());
+    // Đã xóa save username
+    // settings.setValue("protocol", protocolCombo->currentText());
     settings.setValue("geometry", saveGeometry());
 }
 
@@ -741,8 +785,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
         event->ignore();
         if (!isHideMessageShown) {
             systemTrayIcon->showMessage("VPN Client",
-                "Ứng dụng đã được thu nhỏ xuống system tray.",
-                QSystemTrayIcon::Information, 3000);
+                                        "Ứng dụng đã được thu nhỏ xuống system tray.",
+                                        QSystemTrayIcon::Information, 3000);
             isHideMessageShown = true;
         }
     } else {
@@ -760,4 +804,16 @@ void MainWindow::onRegionChanged()
         QMessageBox::information(this, "Thông báo", "Bạn sẽ được ngắt kết nối để thay đổi vùng máy chủ.");
         disconnectFromVPN();
     }
+}
+
+QString MainWindow::formatBytes(quint64 bytes)
+{
+    if (bytes < 1024)
+        return QString("%1 B").arg(bytes);
+    if (bytes < 1024 * 1024)
+        return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
+    if (bytes < 1024 * 1024 * 1024)
+        return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 2);
+
+    return QString("%1 GB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
 }

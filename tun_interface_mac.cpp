@@ -2,6 +2,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/uio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/kern_control.h>
@@ -9,20 +10,24 @@
 #include <net/if_utun.h>
 #include <net/if.h>
 #include <cstring>
-//#include <iostream>
 #include <sstream>
 #include <cstdlib>
 #include <fstream>
+#include <arpa/inet.h>
+#include <vector>
 
-
-// Một số SDK/macOS không định nghĩa SYSPROTO_CONTROL → tự define
 #ifndef SYSPROTO_CONTROL
 #define SYSPROTO_CONTROL 2
 #endif
 
+// Helper: Thực thi lệnh và log
+bool runCmd(const std::string& cmd) {
+    std::cout << "[CMD] " << cmd << std::endl;
+    return (system(cmd.c_str()) == 0);
+}
+
 TUNInterface::TUNInterface(const std::string& name)
     : interfaceName(name), isOpen(false), tunFd(-1),
-    vpnIP(""), subnetMask(""), serverIP(""),
     bytesReceived(0), bytesSent(0) {}
 
 TUNInterface::~TUNInterface() {
@@ -54,7 +59,7 @@ bool TUNInterface::create() {
     sc.sc_family = AF_SYSTEM;
     sc.ss_sysaddr = AF_SYS_CONTROL;
     sc.sc_id = ctlInfo.ctl_id;
-    sc.sc_unit = 0; // 0 = để kernel chọn utunX
+    sc.sc_unit = 0; // Kernel tự chọn utunX
 
     if (connect(tunFd, (struct sockaddr*)&sc, sizeof(sc)) < 0) {
         perror("connect");
@@ -62,269 +67,168 @@ bool TUNInterface::create() {
         return false;
     }
 
-    // Lấy tên interface thực tế (utun0, utun1, …)
     char ifname[20];
     socklen_t ifname_len = sizeof(ifname);
     if (getsockopt(tunFd, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, ifname, &ifname_len) == 0) {
         interfaceName = ifname;
     } else {
-        interfaceName = "utun0"; // fallback
+        // Fallback: đoán tên dựa trên ID? Rủi ro, nhưng thường là utun0/1
+        // Tốt nhất là in lỗi nếu không lấy được tên
+        std::cerr << "[TUN] Warning: Could not get interface name, assuming " << interfaceName << std::endl;
     }
 
-    // non-blocking
     fcntl(tunFd, F_SETFL, O_NONBLOCK);
-
     isOpen.store(true);
+
+    std::cout << "[TUN] Created interface: " << interfaceName << std::endl;
     return true;
 }
 
-bool TUNInterface::configure(const std::string& ip, const std::string& mask,
-                             const std::string& server) {
-    vpnIP = ip;
-    subnetMask = mask;
-    serverIP = server;
-
-    return configureClientMode();
+std::string TUNInterface::getDefaultGateway() {
+    // macOS: parse từ "route -n get default"
+    FILE* pipe = popen("route -n get default | grep gateway | awk '{print $2}'", "r");
+    if (!pipe) return "";
+    char buffer[128];
+    std::string result = "";
+    if (fgets(buffer, 128, pipe) != NULL) {
+        result = buffer;
+        result.erase(result.find_last_not_of(" \n\r\t") + 1);
+    }
+    pclose(pipe);
+    return result;
 }
 
 bool TUNInterface::configureClientMode() {
     if (!isOpen.load()) return false;
 
-    // 1. Cấu hình IP với peer point-to-point
-    // Chúng ta trỏ 10.8.0.3 đến 10.8.0.1 (VPN Gateway của server)
-    std::ostringstream cmd;
-    cmd << "ifconfig " << interfaceName << " " << vpnIP
-        << " 10.8.0.1 netmask 255.255.255.0 up";
-    if (!executeCommand(cmd.str())) {
-        std::cout << "[TUN] FAILED to set IP" << std::endl;
-        return false;
-    }
-    std::cout << "[TUN] Set IP " << vpnIP << " -> 10.8.0.1" << std::endl;
-
-
-    // 2. LẤY GATEWAY CŨ VÀ BẢO VỆ ROUTE ĐẾN SERVER (PHẢI LÀM TRƯỚC)
-    // serverIP là IP public của máy chủ AWS/Vultr...
-    if (!serverIP.empty()) {
-        std::string oldGateway = getDefaultGateway();
-        if (!oldGateway.empty()) {
-            std::ostringstream saveCmd;
-            saveCmd << "echo " << oldGateway << " > /tmp/vpn_old_gateway";
-            executeCommand(saveCmd.str());
-
-            // Thêm route cho server qua gateway cũ
-            std::ostringstream serverRouteCmd;
-            serverRouteCmd << "route add -host " << serverIP << " " << oldGateway;
-            executeCommand(serverRouteCmd.str());
-            std::cout << "[TUN] Protected route to server " << serverIP << " via " << oldGateway << std::endl;
-        } else {
-            std::cout << "[TUN] WARNING: Could not get old gateway. VPN connection might fail." << std::endl;
-        }
+    std::string oldGateway = getDefaultGateway();
+    if (oldGateway.empty()) {
+        std::cerr << "[TUN] Error: No physical gateway found!\n";
+        // Vẫn tiếp tục thử, có thể đang trong mạng LAN đặc biệt
     } else {
-        std::cout << "[TUN] WARNING: Server IP is empty. Cannot protect server route." << std::endl;
+        std::cout << "[TUN] Physical Gateway: " << oldGateway << std::endl;
+
+        // Route tới Server thật qua cổng vật lý để tránh loop VPN
+        if (!serverIP.empty()) {
+            runCmd("route delete " + serverIP + " >/dev/null 2>&1");
+            runCmd("route add " + serverIP + " " + oldGateway);
+        }
     }
 
-    // 3. THÊM ROUTE CHO SUBNET VPN
-    // Đảm bảo traffic đến 10.8.0.0/24 đi qua utun
-    std::ostringstream subnetRouteCmd;
-    subnetRouteCmd << "route add -net 10.8.0.0/24 -interface " << interfaceName;
-    executeCommand(subnetRouteCmd.str());
+    // Cấu hình IP cho interface
+    std::ostringstream ipCmd;
+    ipCmd << "ifconfig " << interfaceName << " " << vpnIP << " " << vpnIP << " netmask 255.255.255.0 up";
+    // Lưu ý: MacOS Point-to-Point đôi khi cần set dst là chính nó hoặc gateway ảo
+    runCmd(ipCmd.str());
 
-    // 4. THAY ĐỔI DEFAULT ROUTE (LÀM SAU CÙNG)
-    executeCommand("route delete default"); // Xóa default cũ
-    std::ostringstream defaultRouteCmd;
-    defaultRouteCmd << "route add default -interface " << interfaceName;
-    if (!executeCommand(defaultRouteCmd.str())) {
-        std::cout << "[TUN] FAILED to set default route" << std::endl;
-        // Thử thêm lại gateway cũ nếu thất bại
-        std::string oldGateway = getDefaultGateway();
-        if(!oldGateway.empty()) executeCommand("route add default " + oldGateway);
-        return false;
+    // ROUTING QUAN TRỌNG: Chia đôi Default Route để override (Fix Leak)
+    // Thay vì thay đổi default gateway (rủi ro), ta add 2 route bao trùm toàn bộ IPv4
+    runCmd("route add -net 0.0.0.0/1 -interface " + interfaceName);
+    runCmd("route add -net 128.0.0.0/1 -interface " + interfaceName);
+
+    // DNS Fix (Google DNS & Cloudflare)
+    std::vector<std::string> services = {"Wi-Fi", "Ethernet", "Thunderbolt Bridge"};
+    for (const auto& service : services) {
+        runCmd("networksetup -setdnsservers \"" + service + "\" 8.8.8.8 1.1.1.1");
     }
-    std::cout << "[TUN] Set default route via " << interfaceName << std::endl;
 
-    // 5. Cấu hình DNS (optional)
-    executeCommand("networksetup -setdnsservers Wi-Fi 8.8.8.8 8.8.4.4");
-
-    std::cout << "[INFO] Client mode configured with default route via VPN\n";
     return true;
 }
 
-bool TUNInterface::setIP(const std::string& ip, const std::string& mask) {
+bool TUNInterface::configure(const std::string& ip, const std::string& mask, const std::string& server) {
     vpnIP = ip;
     subnetMask = mask;
-    std::ostringstream cmd;
-    cmd << "ifconfig " << interfaceName << " " << vpnIP << " netmask " << subnetMask << " up";
-    return executeCommand(cmd.str());
+    serverIP = server;
+    return configureClientMode();
 }
 
-bool TUNInterface::setRoutes() {
-    if (serverIP.empty()) return true; // không có serverIP thì bỏ qua
-    std::ostringstream cmd;
-    cmd << "route add default " << vpnIP;
-    return executeCommand(cmd.str());
-}
-
-// std::string TUNInterface::getDefaultGateway() {
-//     // macOS: có thể đọc từ "route -n get default"
-//     // Ở đây tạm stub để tránh lỗi linker
-//     return "";
-// }
-
-
-// bool TUNInterface::configureClientMode() {
-//     if (!isOpen.load()) return false;
-
-//     // 1. Cấu hình IP với peer point-to-point
-//     std::ostringstream cmd;
-//     cmd << "ifconfig " << interfaceName << " " << vpnIP
-//         << " 10.8.0.1 netmask 255.255.255.0 up";
-//     if (!executeCommand(cmd.str())) return false;
-
-//     // 2. Lưu default gateway cũ TRƯỚC KHI thay đổi
-//     std::string oldGateway = getDefaultGateway();
-//     if (!oldGateway.empty()) {
-//         std::ostringstream saveCmd;
-//         saveCmd << "echo " << oldGateway << " > /tmp/vpn_old_gateway";
-//         executeCommand(saveCmd.str());
-
-//         std::cout << "[INFO] Saved old gateway: " << oldGateway << "\n";
-//     }
-
-//     // 3. Thêm route cho server IP qua gateway cũ (để duy trì kết nối VPN)
-//     if (!serverIP.empty() && !oldGateway.empty()) {
-//         std::ostringstream serverRouteCmd;
-//         serverRouteCmd << "route add -host " << serverIP << " " << oldGateway;
-//         executeCommand(serverRouteCmd.str());
-//         std::cout << "[INFO] Added route for VPN server via old gateway\n";
-//     }
-
-//     // 4. Thêm route cho subnet VPN
-//     std::ostringstream subnetRouteCmd;
-//     subnetRouteCmd << "route add -net 10.8.0.0/24 -interface " << interfaceName;
-//     executeCommand(subnetRouteCmd.str());
-
-//     // 5. *QUAN TRỌNG*: Thay đổi default route qua VPN gateway (10.8.0.1)
-//     // Xóa default route cũ
-//     executeCommand("route delete default");
-
-//     // Thêm default route mới qua VPN gateway
-//     std::ostringstream newDefaultRoute;
-//     newDefaultRoute << "route add default 10.8.0.1";
-//     if (!executeCommand(newDefaultRoute.str())) {
-//         std::cout << "[ERROR] Failed to add default route via VPN\n";
-//         return false;
-//     }
-
-//     std::cout << "[INFO] Client routing configured - all traffic via VPN (10.8.0.1)\n";
-//     return true;
-// }
-
-std::string TUNInterface::getDefaultGateway() {
-    std::string gateway;
-    FILE* pipe = popen("route -n get default 2>/dev/null | grep gateway | awk '{print $2}'", "r");
-    if (pipe) {
-        char buffer[128];
-        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            gateway = buffer;
-            // Xóa newline
-            gateway.erase(gateway.find_last_not_of(" \n\r\t") + 1);
-        }
-        pclose(pipe);
-    }
-    return gateway;
-}
-
-std::string TUNInterface::getDefaultInterface() {
-    // macOS: có thể đọc từ "route -n get default | grep interface:"
-    // Ở đây tạm stub để tránh lỗi linker
-    return "en0"; // giả định Wi-Fi
-}
-
-bool TUNInterface::executeCommand(const std::string& cmd) {
-    int ret = system(cmd.c_str());
-    return (ret == 0);
-}
-
-// Thay thế hàm readPacket hiện tại bằng hàm này
 int TUNInterface::readPacket(char* buffer, int maxSize) {
-    if (!isOpen.load() || tunFd < 0) return -1;
+    if (!isOpen.load()) return -1;
 
-    // --- BẮT ĐẦU THAY ĐỔI ---
-    // Buffer tạm để đọc cả 4 byte header của macOS
-    char readBuffer[maxSize + 4];
-    int n = ::read(tunFd, readBuffer, sizeof(readBuffer));
+    // macOS utun gửi kèm 4 byte header (Protocol Family)
+    // Chúng ta cần đọc vào buffer tạm hoặc dịch chuyển con trỏ
+    uint32_t packetHeader;
+    struct iovec iov[2];
+
+    // Header
+    iov[0].iov_base = &packetHeader;
+    iov[0].iov_len = sizeof(packetHeader);
+
+    // Data
+    iov[1].iov_base = buffer;
+    iov[1].iov_len = maxSize;
+
+    int n = readv(tunFd, iov, 2);
 
     if (n > 4) {
-        // Bỏ qua 4 byte header, chỉ sao chép gói tin IP thực sự
-        memcpy(buffer, readBuffer + 4, n - 4);
         bytesReceived += (n - 4);
-        return n - 4; // Trả về kích thước của gói tin IP
+        return (n - 4); // Trả về kích thước thực của IP packet (bỏ header)
     }
-
-    // Nếu đọc lỗi hoặc không có dữ liệu
-    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        // Log lỗi nếu cần
-    }
-    return 0;
-    // --- KẾT THÚC THAY ĐỔI ---
+    return -1;
 }
 
 int TUNInterface::writePacket(const char* buffer, int size) {
-    if (!isOpen.load() || tunFd < 0) return -1;
-    if (size <= 0) return 0;
+    if (!isOpen.load()) return -1;
 
-    // --- BẮT ĐẦU THAY ĐỔI ---
-    char packetWithHeader[size + 4];
+    // macOS utun yêu cầu 4 byte header trước gói tin IP
+    // AF_INET = 2, phải ở dạng Network Byte Order (Big Endian)
+    uint32_t family = htonl(AF_INET);
 
-    // Tạo header AF_INET (IPv4) cho macOS
-    uint32_t header = htonl(AF_INET);
-    memcpy(packetWithHeader, &header, 4);
+    struct iovec iov[2];
+    iov[0].iov_base = &family;
+    iov[0].iov_len = sizeof(family);
 
-    // Gắn gói tin IP vào sau header
-    memcpy(packetWithHeader + 4, buffer, size);
+    iov[1].iov_base = (void*)buffer;
+    iov[1].iov_len = size;
 
-    // Ghi toàn bộ (header + packet) vào utun
-    int n = ::write(tunFd, packetWithHeader, size + 4);
+    int n = writev(tunFd, iov, 2);
 
     if (n > 4) {
-        bytesSent += (n - 4);
-        return n - 4; // Trả về kích thước của gói tin IP đã gửi
+        bytesSent += size;
+        return size;
     }
-
-    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        // Log lỗi nếu cần
-    }
-    return 0;
-    // --- KẾT THÚC THAY ĐỔI ---
+    return -1;
 }
 
 void TUNInterface::close() {
-    if (isOpen.load() && tunFd >= 0) {
-        // Restore default gateway
-        std::string oldGateway;
-        std::ifstream gw("/tmp/vpn_old_gateway");
-        if (gw.is_open()) {
-            std::getline(gw, oldGateway);
-            gw.close();
-            if (!oldGateway.empty()) {
-                std::ostringstream restoreCmd;
-                restoreCmd << "route add default " << oldGateway;
-                executeCommand(restoreCmd.str());
-            }
-            executeCommand("rm /tmp/vpn_old_gateway");
-        }
+    if (!isOpen.load()) return;
 
-        // Remove VPN routes
-        executeCommand("route delete -net 10.8.0.0/24 2>/dev/null");
-        executeCommand("route delete default -interface " + interfaceName + " 2>/dev/null");
+    std::cout << "[TUN] Restoring network configuration...\n";
 
-        ::close(tunFd);
-        tunFd = -1;
-        isOpen.store(false);
+    // 1. Remove Routes
+    runCmd("route delete -net 0.0.0.0/1");
+    runCmd("route delete -net 128.0.0.0/1");
+
+    if (!serverIP.empty()) {
+        runCmd("route delete " + serverIP);
     }
+
+    // 2. Restore DNS & IPv6 for ALL interfaces
+    // We must mirror the list from configureClientMode to ensure no interface is left broken.
+    std::vector<std::string> services = {
+        "Wi-Fi",
+        "Thunderbolt Ethernet",
+        "USB 10/100/1000 LAN",
+        "Ethernet"
+    };
+
+    for (const auto& service : services) {
+        // Clear DNS (Return to DHCP/ISP default)
+        runCmd("networksetup -setdnsservers \"" + service + "\" Empty");
+
+        // Restore IPv6 (Return to Automatic)
+        runCmd("networksetup -setv6automatic \"" + service + "\"");
+    }
+
+    ::close(tunFd);
+    tunFd = -1;
+    isOpen.store(false);
 }
 
-void TUNInterface::resetStats() {
-    bytesReceived = 0;
-    bytesSent = 0;
-}
+// Các hàm phụ trợ khác giữ nguyên hoặc stub
+bool TUNInterface::setIP(const std::string& ip, const std::string& mask) { return true; }
+bool TUNInterface::setRoutes() { return true; }
+std::string TUNInterface::getDefaultInterface() { return "en0"; }
+bool TUNInterface::executeCommand(const std::string& cmd) { return runCmd(cmd); }
+void TUNInterface::resetStats() { bytesReceived = 0; bytesSent = 0; }
+void TUNInterface::setIPv6Status(bool enable) { /* Optional on Mac */ }

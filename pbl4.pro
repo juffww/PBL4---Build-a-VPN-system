@@ -17,12 +17,14 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    crypto_client.cpp \
     main.cpp \
     mainwindow.cpp \
     vpn_client.cpp  \
     tun_interface_mac.cpp
 
 HEADERS += \
+    crypto_client.h \
     mainwindow.h \
     vpn_client.h \
     tun_interface.h
@@ -34,3 +36,8 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 
 DISTFILES += \
     mac_config.ini
+
+macx {
+    INCLUDEPATH += /opt/homebrew/opt/openssl@3/include
+    LIBS += -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto
+}

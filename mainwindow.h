@@ -50,6 +50,7 @@ private:
     void getPublicIP();
     bool isServerReachable(const QString& host);
     QString getCurrentLocalIP();
+    QString formatBytes(quint64 bytes);
 
     QLabel *statusLabel;
     QLabel *realIPLabel;
@@ -57,12 +58,15 @@ private:
     QLabel *publicIPLabel;
     QLabel *downloadLabel;
     QLabel *uploadLabel;
+    QLabel *totalDownloadLabel;
+    QLabel *totalUploadLabel;
     QLabel *connectionTimeLabel;
+    QLabel *latencyLabel;
+    QLabel *packetLossLabel;
 
     QLineEdit *serverEdit;
     QLineEdit *usernameEdit;
     QLineEdit *passwordEdit;
-    QComboBox *protocolCombo;
 
     QPushButton *connectButton;
     QTextEdit *logTextEdit;
@@ -90,6 +94,10 @@ private:
     quint64 totalDownload;
     quint64 totalUpload;
 
+    quint64 lastTotalDownload = 0;
+    quint64 lastTotalUpload = 0;
+    int currentLatency = -1; // -1 nghĩa là chưa có ping
+
     QString currentRealIP;
     QString currentVpnIP;
     QString currentPublicIP;
@@ -97,6 +105,7 @@ private:
     QPushButton* trafficButton;
     QTimer* webTrafficTimer;
     bool trafficRunning;
+
 };
 
 #endif
